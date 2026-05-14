@@ -34,6 +34,8 @@ def app_with_speech(mock_speech_backend):
 
     app = FastAPI()
     app.state.speech_backend = mock_speech_backend
+    app.state.config = MagicMock()
+    app.state.config.speech.partial_streaming_enabled = True
     app.include_router(speech_router)
     return app
 
@@ -84,3 +86,28 @@ def test_health_no_backend():
     assert response.status_code == 200
     data = response.json()
     assert data["available"] is False
+
+
+def test_stream_transcribe_ws(client):
+    with client.websocket_connect("/v1/speech/stream") as ws:
+        ws.send_json({"type": "start", "format": "wav"})
+        ws.send_json({"type": "audio", "data": "ZmFrZQ=="})
+        ws.send_json({"type": "stop"})
+        data = ws.receive_json()
+        assert data["type"] in ("partial_text", "final_text")
+
+
+def test_stream_transcribe_disabled_flag(mock_speech_backend):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openjarvis.server.api_routes import speech_router
+
+    app = FastAPI()
+    app.state.speech_backend = mock_speech_backend
+    app.state.config = MagicMock()
+    app.state.config.speech.partial_streaming_enabled = False
+    app.include_router(speech_router)
+    client = TestClient(app)
+    with client.websocket_connect("/v1/speech/stream") as ws:
+        data = ws.receive_json()
+        assert data["type"] == "error"

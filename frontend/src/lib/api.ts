@@ -285,6 +285,32 @@ export async function fetchSpeechHealth(): Promise<SpeechHealth> {
   return res.json();
 }
 
+export interface SpeechStreamHandlers {
+  onPartialText?: (text: string) => void;
+  onFinalText?: (text: string) => void;
+  onInterrupted?: () => void;
+  onError?: (detail: string) => void;
+}
+
+export function createSpeechStream(handlers: SpeechStreamHandlers): WebSocket {
+  const base = getBase() || window.location.origin;
+  const wsUrl = base.replace(/^http/, 'ws') + '/v1/speech/stream';
+  const ws = new WebSocket(wsUrl);
+  ws.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      if (data.type === 'partial_text') handlers.onPartialText?.(data.text || '');
+      else if (data.type === 'final_text') handlers.onFinalText?.(data.text || '');
+      else if (data.type === 'interrupted') handlers.onInterrupted?.();
+      else if (data.type === 'error') handlers.onError?.(data.detail || 'Streaming error');
+    } catch {
+      handlers.onError?.('Invalid speech stream message');
+    }
+  };
+  ws.onerror = () => handlers.onError?.('Speech stream connection error');
+  return ws;
+}
+
 // ---------------------------------------------------------------------------
 // Agent Manager
 // ---------------------------------------------------------------------------

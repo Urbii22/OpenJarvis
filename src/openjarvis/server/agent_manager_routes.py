@@ -13,7 +13,19 @@ try:
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
 except ImportError:
-    raise ImportError("fastapi and pydantic are required for server routes")
+    APIRouter = None  # type: ignore[assignment]
+    HTTPException = Exception  # type: ignore[assignment]
+    Request = Any  # type: ignore[assignment]
+    StreamingResponse = Any  # type: ignore[assignment]
+
+    class BaseModel:  # type: ignore[no-redef]
+        """Fallback model to keep helper imports working without FastAPI runtime."""
+
+    _FASTAPI_IMPORT_ERROR = ImportError(
+        "fastapi and pydantic are required for server routes"
+    )
+else:
+    _FASTAPI_IMPORT_ERROR = None
 
 logger = logging.getLogger("openjarvis.server.agent_manager")
 
@@ -59,6 +71,10 @@ class FeedbackRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class ToolConfirmationDecisionRequest(BaseModel):
+    approved: bool
+
+
 _BROWSER_SUB_TOOLS = {
     "browser_navigate",
     "browser_click",
@@ -67,6 +83,51 @@ _BROWSER_SUB_TOOLS = {
     "browser_extract",
     "browser_axtree",
 }
+_WEB_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+
+def _classify_web_tool_risk(tool_name: str, tool_args: str) -> str:
+    if tool_name == "http_request":
+        try:
+            import json as _json
+
+            parsed = _json.loads(tool_args) if tool_args else {}
+        except Exception:
+            parsed = {}
+        method = str(parsed.get("method", "GET")).upper()
+        return "medium" if method in {"GET", "HEAD"} else "high"
+    if tool_name == "web_search":
+        try:
+            import json as _json
+
+            parsed = _json.loads(tool_args) if tool_args else {}
+        except Exception:
+            parsed = {}
+        query = str(parsed.get("query", "")).strip()
+        return "medium" if query.startswith(("http://", "https://")) else "low"
+    return "low"
+
+
+def _requires_web_confirmation(
+    app_state: Any,
+    tool_name: str,
+    tool_args: str,
+) -> tuple[bool, str]:
+    if tool_name not in {"http_request", "web_search"}:
+        return False, "low"
+    cfg = getattr(app_state, "config", None)
+    security_cfg = getattr(cfg, "security", None) if cfg is not None else None
+    if security_cfg is None:
+        return False, "low"
+    if not getattr(security_cfg, "web_confirmation_flow_enabled", False):
+        return False, "low"
+    risk = _classify_web_tool_risk(tool_name, tool_args)
+    required = str(
+        getattr(security_cfg, "web_confirmation_required_risk", "high") or "high"
+    ).lower()
+    risk_value = _WEB_RISK_ORDER.get(risk, 0)
+    required_value = _WEB_RISK_ORDER.get(required, _WEB_RISK_ORDER["high"])
+    return risk_value >= required_value, risk
 
 
 class _LightweightSystem:
@@ -1133,6 +1194,7 @@ async def _stream_managed_agent(
                 import time as _time
 
                 for tc in sorted_tcs:
+                    import asyncio
                     tool_name = tc["function"]["name"]
                     tool_args = tc["function"]["arguments"]
                     tool_result_content = f"Tool '{tool_name}' not available"
@@ -1152,6 +1214,84 @@ async def _stream_managed_agent(
                     except Exception as _tc_exc:
                         logger.warning("Log tool_call failed: %s", _tc_exc)
                     tool_start_ms = _time.monotonic() * 1000
+
+                    needs_confirm, risk_level = _requires_web_confirmation(
+                        app_state,
+                        tool_name,
+                        tool_args,
+                    )
+                    if needs_confirm:
+                        import uuid as _uuid
+
+                        pending = getattr(app_state, "_web_tool_confirmations", {})
+                        app_state._web_tool_confirmations = pending
+                        confirmation_id = _uuid.uuid4().hex
+                        pending[confirmation_id] = None
+                        _confirm_payload = json.dumps(
+                            {
+                                "confirmation_id": confirmation_id,
+                                "agent_id": agent_id,
+                                "tool": tool_name,
+                                "arguments": tool_args,
+                                "risk_level": risk_level,
+                            }
+                        )
+                        yield (
+                            "event: tool_confirmation_required\n"
+                            f"data: {_confirm_payload}\n\n"
+                        )
+                        timeout_s = max(
+                            1,
+                            int(
+                                getattr(
+                                    app_state.config.security,
+                                    "web_confirmation_timeout_seconds",
+                                    30,
+                                )
+                            ),
+                        )
+                        approved = None
+                        for _ in range(timeout_s * 10):
+                            approved = pending.get(confirmation_id)
+                            if approved is not None:
+                                break
+                            await asyncio.sleep(0.1)
+                        pending.pop(confirmation_id, None)
+                        if approved is not True:
+                            reason = "denied" if approved is False else "timeout"
+                            tool_result_content = (
+                                f"Web action {reason} by confirmation policy."
+                            )
+                            tool_succeeded = False
+                            tool_latency_ms = (_time.monotonic() * 1000) - tool_start_ms
+                            collected_tool_calls.append(
+                                {
+                                    "tool": tool_name,
+                                    "arguments": tool_args,
+                                    "result": tool_result_content,
+                                    "success": tool_succeeded,
+                                    "latency": tool_latency_ms,
+                                }
+                            )
+                            persist_state["tool_calls"] = list(collected_tool_calls)
+                            _end_payload = json.dumps(
+                                {
+                                    "tool": tool_name,
+                                    "success": False,
+                                    "latency": tool_latency_ms,
+                                    "result": tool_result_content,
+                                }
+                            )
+                            yield f"event: tool_call_end\ndata: {_end_payload}\n\n"
+                            messages_for_llm.append(
+                                Message(
+                                    role=Role.TOOL,
+                                    content=tool_result_content,
+                                    tool_call_id=tc["id"],
+                                    name=tool_name,
+                                )
+                            )
+                            continue
 
                     try:
                         # Try MCP adapter first (external tools)
@@ -1308,6 +1448,9 @@ def create_agent_manager_router(
 
     Returns a 4-tuple: (agents_router, templates_router, global_router, tools_router).
     """
+    if APIRouter is None:
+        raise ImportError(str(_FASTAPI_IMPORT_ERROR)) from _FASTAPI_IMPORT_ERROR
+
     agents_router = APIRouter(prefix="/v1/managed-agents", tags=["managed-agents"])
     templates_router = APIRouter(prefix="/v1/templates", tags=["templates"])
 
@@ -1824,6 +1967,21 @@ def create_agent_manager_router(
             bus=bus,
             app_state=request.app.state,
         )
+
+    @agents_router.post("/{agent_id}/tool-confirmations/{confirmation_id}")
+    async def decide_tool_confirmation(
+        agent_id: str,
+        confirmation_id: str,
+        req: ToolConfirmationDecisionRequest,
+        request: Request,
+    ):
+        if not manager.get_agent(agent_id):
+            raise HTTPException(status_code=404, detail="Agent not found")
+        pending = getattr(request.app.state, "_web_tool_confirmations", {})
+        if confirmation_id not in pending:
+            raise HTTPException(status_code=404, detail="Confirmation not found")
+        pending[confirmation_id] = bool(req.approved)
+        return {"ok": True, "approved": bool(req.approved)}
 
     # ── State inspection ─────────────────────────────────────
 

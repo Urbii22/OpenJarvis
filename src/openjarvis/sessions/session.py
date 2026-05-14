@@ -114,8 +114,31 @@ class SessionStore:
         channel: str = "",
         channel_user_id: str = "",
         display_name: str = "",
+        preferred_session_id: str = "",
     ) -> Session:
         """Get existing session for user or create a new one."""
+        if preferred_session_id:
+            row = self._conn.execute(
+                "SELECT session_id, user_id, display_name,"
+                " channel_ids, created_at, last_activity,"
+                " metadata "
+                "FROM sessions WHERE session_id = ? LIMIT 1",
+                (preferred_session_id,),
+            ).fetchone()
+            if row:
+                return Session(
+                    session_id=row[0],
+                    identity=SessionIdentity(
+                        user_id=row[1],
+                        display_name=row[2] or display_name,
+                        channel_ids=json.loads(row[3]) if row[3] else {},
+                    ),
+                    messages=self._load_messages(row[0]),
+                    created_at=row[4] or 0.0,
+                    last_activity=row[5] or 0.0,
+                    metadata=json.loads(row[6]) if row[6] else {},
+                )
+
         row = self._conn.execute(
             "SELECT session_id, user_id, display_name,"
             " channel_ids, created_at, last_activity,"
@@ -136,6 +159,7 @@ class SessionStore:
                     channel,
                     channel_user_id,
                     display_name,
+                    preferred_session_id=preferred_session_id,
                 )
 
             channel_ids = json.loads(row[3]) if row[3] else {}
@@ -165,7 +189,13 @@ class SessionStore:
                 metadata=json.loads(row[6]) if row[6] else {},
             )
 
-        return self._create_session(user_id, channel, channel_user_id, display_name)
+        return self._create_session(
+            user_id,
+            channel,
+            channel_user_id,
+            display_name,
+            preferred_session_id=preferred_session_id,
+        )
 
     def _create_session(
         self,
@@ -173,8 +203,9 @@ class SessionStore:
         channel: str,
         channel_user_id: str,
         display_name: str,
+        preferred_session_id: str = "",
     ) -> Session:
-        session_id = uuid.uuid4().hex[:16]
+        session_id = preferred_session_id or uuid.uuid4().hex[:16]
         now = time.time()
         channel_ids = {channel: channel_user_id} if channel and channel_user_id else {}
         self._conn.execute(

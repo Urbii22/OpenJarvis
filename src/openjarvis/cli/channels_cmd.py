@@ -121,13 +121,13 @@ def imessage_start(
             ScanChunksTool(
                 store=store,
                 engine=engine,
-                model="qwen3.5:4b",
+                model="qwen3.5:9b",
             ),
             ThinkTool(),
         ]
         agent = DeepResearchAgent(
             engine=engine,
-            model="qwen3.5:4b",
+            model="qwen3.5:9b",
             tools=tools,
         )
 

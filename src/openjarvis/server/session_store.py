@@ -40,6 +40,7 @@ class SessionStore:
             CREATE TABLE IF NOT EXISTS channel_sessions (
                 sender_id                    TEXT    NOT NULL,
                 channel_type                 TEXT    NOT NULL,
+                session_id                   TEXT,
                 conversation_history         TEXT    NOT NULL DEFAULT '[]',
                 preferred_notification_channel TEXT,
                 pending_response             TEXT,
@@ -49,35 +50,57 @@ class SessionStore:
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_updated_at
                 ON channel_sessions (updated_at);
+            CREATE INDEX IF NOT EXISTS idx_sessions_session_id
+                ON channel_sessions (session_id);
             """
         )
+        try:
+            self._db.execute("ALTER TABLE channel_sessions ADD COLUMN session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
         self._db.commit()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def get_or_create(self, sender_id: str, channel_type: str) -> Dict[str, Any]:
+    def get_or_create(
+        self,
+        sender_id: str,
+        channel_type: str,
+        *,
+        session_id: str = "",
+    ) -> Dict[str, Any]:
         row = self._db.execute(
             "SELECT * FROM channel_sessions WHERE sender_id = ? AND channel_type = ?",
             (sender_id, channel_type),
         ).fetchone()
         if row is None:
             self._db.execute(
-                "INSERT INTO channel_sessions (sender_id, channel_type) VALUES (?, ?)",
-                (sender_id, channel_type),
+                "INSERT INTO channel_sessions (sender_id, channel_type, session_id)"
+                " VALUES (?, ?, ?)",
+                (sender_id, channel_type, session_id or None),
             )
             self._db.commit()
             return {
                 "sender_id": sender_id,
                 "channel_type": channel_type,
+                "session_id": session_id or None,
                 "conversation_history": [],
                 "preferred_notification_channel": None,
                 "pending_response": None,
             }
+        if session_id and row["session_id"] != session_id:
+            self._db.execute(
+                "UPDATE channel_sessions SET session_id = ?, updated_at = datetime('now')"
+                " WHERE sender_id = ? AND channel_type = ?",
+                (session_id, sender_id, channel_type),
+            )
+            self._db.commit()
         return {
             "sender_id": row["sender_id"],
             "channel_type": row["channel_type"],
+            "session_id": row["session_id"],
             "conversation_history": json.loads(row["conversation_history"]),
             "preferred_notification_channel": row["preferred_notification_channel"],
             "pending_response": row["pending_response"],

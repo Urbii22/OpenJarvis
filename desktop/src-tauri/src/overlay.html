@@ -160,7 +160,8 @@ html,body,:root{
 const input=document.getElementById('input');
 const sendBtn=document.getElementById('send-btn');
 const messagesEl=document.getElementById('messages');
-let streaming=false,abort=null,model='qwen3.5:4b';
+const preferredModel='qwen3.5:9b';
+let streaming=false,abort=null,model=preferredModel;
 let convId='', convTitle='Overlay chat', convCreated=Date.now();
 let messages=[];
 
@@ -202,6 +203,8 @@ fetch('/v1/models').then(r=>r.json()).then(d=>{
   // Restore saved model or pick first available
   const saved=messages.length&&messages[0].model;
   if(saved&&modelSelect.querySelector('option[value="'+CSS.escape(saved)+'"]')){modelSelect.value=saved}
+  else if(modelSelect.querySelector('option[value="'+CSS.escape(preferredModel)+'"]')){modelSelect.value=preferredModel}
+  else if(local.length){modelSelect.value=local[0]}
   model=modelSelect.value||model;
 }).catch(()=>{});
 modelSelect.addEventListener('change',()=>{model=modelSelect.value});

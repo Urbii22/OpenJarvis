@@ -1,0 +1,106 @@
+{
+  "generated_at": "2026-05-14T16:04:40",
+  "baseline_phrase_count": 12,
+  "rankings": [
+    {
+      "profile": "jarvis_core",
+      "provider": "cartesia",
+      "voice_id": "a0e99841-438c-4a64-b679-ae501e7d6091",
+      "label": "Cartesia British Butler",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 9.12,
+      "rate": 1.0,
+      "style_note": "Authoritative, smooth, low fatigue."
+    },
+    {
+      "profile": "briefing",
+      "provider": "cartesia",
+      "voice_id": "a0e99841-438c-4a64-b679-ae501e7d6091",
+      "label": "Cartesia Briefing",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 9.04,
+      "rate": 1.08,
+      "style_note": "Fast but composed operational briefing."
+    },
+    {
+      "profile": "companion",
+      "provider": "cartesia",
+      "voice_id": "a0e99841-438c-4a64-b679-ae501e7d6091",
+      "label": "Cartesia Companion",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 8.98,
+      "rate": 0.98,
+      "style_note": "Warmer and calmer for longer interactions."
+    },
+    {
+      "profile": "jarvis_core",
+      "provider": "openai_tts",
+      "voice_id": "onyx",
+      "label": "OpenAI Onyx",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 8.81,
+      "rate": 1.02,
+      "style_note": "Distinctive, grounded, concise briefing tone."
+    },
+    {
+      "profile": "companion",
+      "provider": "openai_tts",
+      "voice_id": "nova",
+      "label": "OpenAI Nova",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 8.81,
+      "rate": 0.98,
+      "style_note": "Friendly companion mode with softer cadence."
+    },
+    {
+      "profile": "briefing",
+      "provider": "openai_tts",
+      "voice_id": "echo",
+      "label": "OpenAI Echo",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 8.67,
+      "rate": 1.08,
+      "style_note": "Sharper articulation for status updates."
+    }
+  ],
+  "selected": {
+    "primary": {
+      "profile": "jarvis_core",
+      "provider": "cartesia",
+      "voice_id": "a0e99841-438c-4a64-b679-ae501e7d6091",
+      "label": "Cartesia British Butler",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 9.12,
+      "rate": 1.0,
+      "style_note": "Authoritative, smooth, low fatigue."
+    },
+    "backup": {
+      "profile": "jarvis_core",
+      "provider": "openai_tts",
+      "voice_id": "onyx",
+      "label": "OpenAI Onyx",
+      "language": "en/es",
+      "availability": false,
+      "quality_score": 8.81,
+      "rate": 1.02,
+      "style_note": "Distinctive, grounded, concise briefing tone."
+    }
+  },
+  "validation_prompts": {
+    "spanish": [
+      "Dame un resumen corto del estado del proyecto.",
+      "Explica este error en espanol sencillo."
+    ],
+    "english": [
+      "Jarvis, status report for this morning.",
+      "Keep the pacing brisk but not robotic."
+    ]
+  }
+}

@@ -494,3 +494,34 @@ class TestResolveToolSpecs:
 
         assert _resolve_tool_specs(None) == []
         assert _resolve_tool_specs([]) == []
+
+
+def test_web_confirmation_risk_classification():
+    from openjarvis.server.agent_manager_routes import _classify_web_tool_risk
+
+    assert _classify_web_tool_risk("web_search", '{"query":"hello"}') == "low"
+    assert _classify_web_tool_risk("web_search", '{"query":"https://x.com"}') == "medium"
+    assert _classify_web_tool_risk("http_request", '{"method":"GET"}') == "medium"
+    assert _classify_web_tool_risk("http_request", '{"method":"POST"}') == "high"
+
+
+def test_web_confirmation_flag_gating():
+    from openjarvis.server.agent_manager_routes import _requires_web_confirmation
+
+    class _Sec:
+        web_confirmation_flow_enabled = True
+        web_confirmation_required_risk = "medium"
+
+    class _Cfg:
+        security = _Sec()
+
+    class _State:
+        config = _Cfg()
+
+    needs, risk = _requires_web_confirmation(
+        _State(),
+        "http_request",
+        '{"method":"POST"}',
+    )
+    assert needs is True
+    assert risk == "high"

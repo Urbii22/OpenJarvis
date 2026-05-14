@@ -36,6 +36,7 @@ class ToolSpec:
     timeout_seconds: float = 30.0
     required_capabilities: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    risk_level: str = "low"
 
 
 # ---------------------------------------------------------------------------

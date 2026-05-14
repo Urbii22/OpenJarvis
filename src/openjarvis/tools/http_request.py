@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from urllib.parse import urlparse
 from typing import Any
 
 import httpx
@@ -20,6 +21,18 @@ logger = logging.getLogger(__name__)
 _MAX_RESPONSE_BYTES = 1_048_576
 
 _ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"})
+_SENSITIVE_HEADERS = frozenset(
+    {"authorization", "cookie", "proxy-authorization", "x-api-key"}
+)
+
+
+def _domain_allowed(hostname: str, allowlist: set[str], denylist: set[str]) -> bool:
+    if not hostname:
+        return False
+    host = hostname.lower()
+    if host in denylist:
+        return False
+    return not allowlist or host in allowlist
 
 
 @ToolRegistry.register("http_request")
@@ -70,6 +83,8 @@ class HttpRequestTool(BaseTool):
             },
             category="network",
             required_capabilities=["network:fetch"],
+            risk_level="high",
+            metadata={"risk_level": "high"},
         )
 
     def execute(self, **params: Any) -> ToolResult:
@@ -107,6 +122,51 @@ class HttpRequestTool(BaseTool):
         }
         body = params.get("body")
         timeout = params.get("timeout", 30)
+        follow_redirects = True
+        max_redirects = 20
+
+        # Optional stricter web policy (feature-flagged, defaults off)
+        try:
+            from openjarvis.core.config import load_config
+
+            cfg = load_config()
+            sec = cfg.security
+        except Exception:
+            sec = None
+
+        if sec is not None and sec.web_risk_policy_enabled:
+            host = (urlparse(url).hostname or "").lower()
+            allowlist = {
+                d.strip().lower()
+                for d in (sec.web_allowlist_domains or "").split(",")
+                if d.strip()
+            }
+            denylist = {
+                d.strip().lower()
+                for d in (sec.web_denylist_domains or "").split(",")
+                if d.strip()
+            }
+            if not _domain_allowed(host, allowlist, denylist):
+                return ToolResult(
+                    tool_name="http_request",
+                    content=f"Blocked by web policy for domain: {host or '<unknown>'}",
+                    success=False,
+                )
+            if sec.web_block_sensitive_headers and allowlist:
+                untrusted = host not in allowlist
+                if untrusted:
+                    for hk in headers:
+                        if hk.lower() in _SENSITIVE_HEADERS:
+                            return ToolResult(
+                                tool_name="http_request",
+                                content=(
+                                    "Blocked sensitive header for untrusted domain: "
+                                    f"{hk}"
+                                ),
+                                success=False,
+                            )
+            max_redirects = max(0, int(sec.web_max_redirects))
+            follow_redirects = max_redirects > 0
 
         _rust = None
         try:
@@ -136,14 +196,17 @@ class HttpRequestTool(BaseTool):
 
         try:
             t0 = time.time()
-            response = httpx.request(
-                method,
-                url,
-                headers=headers,
-                content=body,
+            with httpx.Client(
+                follow_redirects=follow_redirects,
+                max_redirects=max_redirects,
                 timeout=float(timeout),
-                follow_redirects=True,
-            )
+            ) as client:
+                response = client.request(
+                    method,
+                    url,
+                    headers=headers,
+                    content=body,
+                )
             elapsed_ms = (time.time() - t0) * 1000
 
             content_type = response.headers.get("content-type", "")

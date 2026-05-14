@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+from base64 import b64decode
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -769,6 +770,73 @@ async def transcribe_speech(request: Request):
         "confidence": result.confidence,
         "duration_seconds": result.duration_seconds,
     }
+
+
+@speech_router.websocket("/stream")
+async def speech_stream(websocket: WebSocket):
+    """Stream partial/final STT updates over websocket."""
+    await websocket.accept()
+    backend = getattr(websocket.app.state, "speech_backend", None)
+    config = getattr(websocket.app.state, "config", None)
+    enabled = bool(getattr(getattr(config, "speech", None), "partial_streaming_enabled", False))
+    if backend is None:
+        await websocket.send_json({"type": "error", "detail": "Speech backend not configured"})
+        await websocket.close()
+        return
+    if not enabled:
+        await websocket.send_json({"type": "error", "detail": "Speech streaming disabled"})
+        await websocket.close()
+        return
+
+    chunks: List[bytes] = []
+    fmt = "wav"
+    language: Optional[str] = None
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            msg_type = data.get("type")
+            if msg_type == "start":
+                fmt = data.get("format", "wav")
+                language = data.get("language")
+                chunks = []
+                continue
+            if msg_type == "audio":
+                payload = data.get("data", "")
+                if payload:
+                    chunks.append(b64decode(payload))
+                continue
+            if msg_type == "interrupt":
+                await websocket.send_json({"type": "interrupted"})
+                continue
+            if msg_type != "stop":
+                continue
+
+            # Strategy: deepgram live first (when available), local chunked fallback second.
+            stream_fn = getattr(backend, "transcribe_stream", None)
+            if callable(stream_fn):
+                for chunk in stream_fn(chunks, format=fmt, language=language):
+                    await websocket.send_json(
+                        {
+                            "type": "final_text" if chunk.is_final else "partial_text",
+                            "text": chunk.text,
+                            "language": chunk.language,
+                            "confidence": chunk.confidence,
+                        }
+                    )
+            else:
+                result = backend.transcribe(b"".join(chunks), format=fmt, language=language)
+                await websocket.send_json(
+                    {
+                        "type": "final_text",
+                        "text": result.text,
+                        "language": result.language,
+                        "confidence": result.confidence,
+                    }
+                )
+    except WebSocketDisconnect:
+        return
 
 
 @speech_router.get("/health")
