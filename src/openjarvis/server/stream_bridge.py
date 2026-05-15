@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi.responses import StreamingResponse
 
@@ -73,11 +73,13 @@ class AgentStreamBridge:
         bus: EventBus,
         model: str,
         request: ChatCompletionRequest,
+        app_state: Any | None = None,
     ) -> None:
         self._agent = agent
         self._bus = bus
         self._model = model
         self._request = request
+        self._app_state = app_state
         self._chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         self._queue: asyncio.Queue = asyncio.Queue()
         self._callbacks: dict[EventType, object] = {}
@@ -178,6 +180,11 @@ class AgentStreamBridge:
 
                 if item is _DONE:
                     break
+
+                if isinstance(item, tuple) and len(item) == 2:
+                    name, data = item
+                    yield self._format_named_event(str(name), data)
+                    continue
 
                 if isinstance(item, Event):
                     sse_name = _EVENT_MAP.get(item.event_type)
@@ -347,6 +354,12 @@ class AgentStreamBridge:
                 agent_task.cancel()
             raise
         finally:
+            if self._app_state is not None and getattr(
+                self._app_state,
+                "_web_confirmation_dispatch",
+                None,
+            ) is not None:
+                self._app_state._web_confirmation_dispatch = None
             self._unsubscribe_all()
 
 
@@ -355,9 +368,20 @@ async def create_agent_stream(
     bus: EventBus,
     model: str,
     request: ChatCompletionRequest,
+    app_state: Any | None = None,
 ) -> StreamingResponse:
     """Create an AgentStreamBridge and return a FastAPI StreamingResponse."""
-    bridge = AgentStreamBridge(agent, bus, model, request)
+    bridge = AgentStreamBridge(agent, bus, model, request, app_state=app_state)
+    if app_state is not None:
+        loop = asyncio.get_running_loop()
+
+        def _dispatch_confirmation(payload: dict[str, Any]) -> None:
+            loop.call_soon_threadsafe(
+                bridge._queue.put_nowait,
+                ("tool_confirmation_required", payload),
+            )
+
+        app_state._web_confirmation_dispatch = _dispatch_confirmation
     return StreamingResponse(
         bridge.stream(),
         media_type="text/event-stream",

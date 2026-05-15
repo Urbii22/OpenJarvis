@@ -8,6 +8,7 @@ Each tool is registered via ``@ToolRegistry.register("name")`` and implements
 from __future__ import annotations
 
 import concurrent.futures
+import inspect
 import json
 import time
 from abc import ABC, abstractmethod
@@ -219,7 +220,20 @@ class ToolExecutor:
                     success=False,
                 )
             prompt = f"Allow execution of tool '{tool_call.name}' with args {params}?"
-            if not self._confirm_callback(prompt):
+            callback = self._confirm_callback
+            try:
+                arg_count = len(inspect.signature(callback).parameters)
+            except (TypeError, ValueError):
+                arg_count = 1
+            if arg_count >= 4:
+                approved = callback(prompt, tool_call.name, params, tool.spec.risk_level)
+            elif arg_count >= 3:
+                approved = callback(prompt, tool_call.name, params)
+            elif arg_count >= 2:
+                approved = callback(prompt, tool_call.name)
+            else:
+                approved = callback(prompt)
+            if not approved:
                 return ToolResult(
                     tool_name=tool_call.name,
                     content=f"Tool '{tool_call.name}' execution denied by user.",

@@ -17,6 +17,7 @@ import re
 from typing import Any, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
+from openjarvis.agents.computer_use_fallback import infer_computer_use_tool
 from openjarvis.core.events import EventBus
 from openjarvis.core.registry import AgentRegistry
 from openjarvis.core.types import Message, Role, ToolCall, ToolResult
@@ -223,6 +224,7 @@ class OrchestratorAgent(ToolUsingAgent):
         turns = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        tool_names = {tool.spec.name for tool in self._tools}
 
         for _turn in range(self._max_turns):
             turns += 1
@@ -244,6 +246,17 @@ class OrchestratorAgent(ToolUsingAgent):
 
             content = result.get("content", "")
             raw_tool_calls = result.get("tool_calls", [])
+
+            if not raw_tool_calls:
+                fallback_tool_call = infer_computer_use_tool(input, tool_names)
+                if fallback_tool_call is not None and turns == 1:
+                    raw_tool_calls = [
+                        {
+                            "id": fallback_tool_call.id,
+                            "name": fallback_tool_call.name,
+                            "arguments": fallback_tool_call.arguments,
+                        }
+                    ]
 
             # No tool calls -> check continuation, then final answer
             if not raw_tool_calls:

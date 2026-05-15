@@ -366,18 +366,56 @@ async def telemetry_stats(request: Request):
 @telemetry_router.get("/energy")
 async def telemetry_energy(request: Request):
     """Get energy monitoring data."""
+    def _nvidia_snapshot() -> dict[str, float | int | None]:
+        try:
+            import subprocess
+
+            cmd = [
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu,memory.used,memory.free,memory.total,temperature.gpu,power.draw",
+                "--format=csv,noheader,nounits",
+            ]
+            raw = subprocess.check_output(
+                cmd,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+            if not raw:
+                return {}
+            # Use first GPU row when multiple are present.
+            row = raw.splitlines()[0]
+            parts = [p.strip() for p in row.split(",")]
+            if len(parts) < 6:
+                return {}
+            return {
+                "gpu_util_pct": float(parts[0]),
+                "vram_used_mb": int(float(parts[1])),
+                "vram_free_mb": int(float(parts[2])),
+                "vram_total_mb": int(float(parts[3])),
+                "gpu_temp_c": float(parts[4]),
+                "gpu_power_w": float(parts[5]),
+            }
+        except Exception:
+            return {}
+
     try:
         from openjarvis.core.config import DEFAULT_CONFIG_DIR
         from openjarvis.telemetry.aggregator import TelemetryAggregator
 
         db_path = DEFAULT_CONFIG_DIR / "telemetry.db"
+        gpu_live = _nvidia_snapshot()
         if not db_path.exists():
             return {
                 "total_energy_j": 0,
                 "energy_per_token_j": 0,
                 "avg_power_w": 0,
                 "cpu_temp_c": None,
-                "gpu_temp_c": None,
+                "gpu_temp_c": gpu_live.get("gpu_temp_c"),
+                "gpu_util_pct": gpu_live.get("gpu_util_pct"),
+                "vram_used_mb": gpu_live.get("vram_used_mb"),
+                "vram_free_mb": gpu_live.get("vram_free_mb"),
+                "vram_total_mb": gpu_live.get("vram_total_mb"),
             }
 
         session_start = getattr(request.app.state, "session_start", None)
@@ -396,7 +434,11 @@ async def telemetry_energy(request: Request):
                     total_energy / total_latency if total_latency > 0 else 0
                 ),
                 "cpu_temp_c": None,
-                "gpu_temp_c": None,
+                "gpu_temp_c": gpu_live.get("gpu_temp_c"),
+                "gpu_util_pct": gpu_live.get("gpu_util_pct"),
+                "vram_used_mb": gpu_live.get("vram_used_mb"),
+                "vram_free_mb": gpu_live.get("vram_free_mb"),
+                "vram_total_mb": gpu_live.get("vram_total_mb"),
             }
         finally:
             agg.close()

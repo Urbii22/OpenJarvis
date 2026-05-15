@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from openjarvis.agents._stubs import AgentContext
+from openjarvis.agents.computer_use_fallback import infer_computer_use_tool
 from openjarvis.agents.orchestrator import OrchestratorAgent
 from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.types import Conversation, Message, Role, ToolResult
@@ -57,6 +58,32 @@ class _ThinkStub(BaseTool):
         return ToolResult(
             tool_name="think",
             content=params.get("thought", ""),
+            success=True,
+        )
+
+
+class _OpenApplicationStub(BaseTool):
+    tool_id = "open_application"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="open_application",
+            description="Open an app.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "app": {"type": "string"},
+                    "args": {"type": "string"},
+                },
+                "required": ["app"],
+            },
+        )
+
+    def execute(self, **params) -> ToolResult:
+        return ToolResult(
+            tool_name="open_application",
+            content=f"Opened: {params.get('app', '')}",
             success=True,
         )
 
@@ -144,6 +171,16 @@ def _make_engine_multi_tool() -> MagicMock:
 
 
 class TestOrchestratorAgent:
+    def test_infer_computer_use_tool_for_open_application(self):
+        tool_call = infer_computer_use_tool(
+            "puedes abrir Spotify?",
+            {"open_application"},
+        )
+
+        assert tool_call is not None
+        assert tool_call.name == "open_application"
+        assert "Spotify" in tool_call.arguments
+
     def test_agent_id(self):
         engine = _make_engine_no_tools()
         agent = OrchestratorAgent(engine, "test-model")
@@ -417,6 +454,41 @@ class TestOrchestratorAgent:
         )
         result = agent.run("What is 2+2?")
         assert result.tool_results[0].latency_seconds >= 0
+
+    def test_fallback_executes_computer_use_tool_when_model_refuses(self):
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine.generate.side_effect = [
+            {
+                "content": "No puedo abrir Spotify directamente desde tu ordenador.",
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8},
+                "model": "test-model",
+                "finish_reason": "stop",
+            },
+            {
+                "content": "He abierto Spotify.",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14},
+                "model": "test-model",
+                "finish_reason": "stop",
+            },
+        ]
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[_OpenApplicationStub()],
+        )
+
+        result = agent.run("puedes abrir Spotify?")
+
+        assert result.content == "He abierto Spotify."
+        assert len(result.tool_results) == 1
+        assert result.tool_results[0].tool_name == "open_application"
+        assert result.tool_results[0].content == "Opened: Spotify"
+        second_call_messages = engine.generate.call_args_list[1][0][0]
+        assistant_msgs = [m for m in second_call_messages if m.role == Role.ASSISTANT and m.tool_calls]
+        tool_msgs = [m for m in second_call_messages if m.role == Role.TOOL]
+        assert assistant_msgs
+        assert tool_msgs
 
     def test_max_turns_1(self):
         """With max_turns=1 and a tool call, should stop after 1 turn."""

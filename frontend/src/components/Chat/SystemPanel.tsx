@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
 import { getBase } from '../../lib/api';
+import { ComputerUseStatus } from './ComputerUseStatus';
 
 interface EnergyData {
   total_energy_j?: number;
@@ -21,6 +22,10 @@ interface EnergyData {
   avg_power_w?: number;
   cpu_temp_c?: number | null;
   gpu_temp_c?: number | null;
+  gpu_util_pct?: number | null;
+  vram_used_mb?: number | null;
+  vram_free_mb?: number | null;
+  vram_total_mb?: number | null;
 }
 
 interface TelemetryStats {
@@ -108,6 +113,9 @@ export function SystemPanel() {
           <h4 className="text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
             Session
           </h4>
+          <div className="mb-2">
+            <ComputerUseStatus />
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <MiniStat icon={Hash} label="Requests" value={String(savings?.total_calls ?? telemetry?.total_requests ?? 0)} />
             <MiniStat icon={Hash} label="Output Tokens" value={formatNumber(savings?.total_completion_tokens ?? telemetry?.total_tokens ?? 0)} />
@@ -125,6 +133,25 @@ export function SystemPanel() {
             )}
             {energy?.gpu_temp_c != null && (
               <MiniStat icon={Thermometer} label="GPU Temp" value={String(Math.round(energy.gpu_temp_c))} unit="°C" />
+            )}
+            {energy?.gpu_util_pct != null && (
+              <MiniStat icon={Activity} label="GPU Util" value={String(Math.round(energy.gpu_util_pct))} unit="%" />
+            )}
+            {energy?.vram_used_mb != null && energy?.vram_total_mb != null && (
+              <MiniStat
+                icon={HardDrive}
+                label="VRAM Used"
+                value={`${Math.round(energy.vram_used_mb / 1024)} / ${Math.round(energy.vram_total_mb / 1024)}`}
+                unit="GB"
+              />
+            )}
+            {energy?.vram_free_mb != null && (
+              <MiniStat
+                icon={HardDrive}
+                label="VRAM Free"
+                value={String(Math.round(energy.vram_free_mb / 1024))}
+                unit="GB"
+              />
             )}
             <MiniStat
               icon={Zap}

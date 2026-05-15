@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from openjarvis.core.types import Message, Role
 from openjarvis.server.models import (
@@ -25,6 +26,10 @@ from openjarvis.server.models import (
 )
 
 router = APIRouter()
+
+
+class ToolConfirmationDecisionRequest(BaseModel):
+    approved: bool
 
 
 def _to_messages(chat_messages) -> list[Message]:
@@ -46,6 +51,7 @@ def _to_messages(chat_messages) -> list[Message]:
 @router.post("/v1/chat/completions")
 async def chat_completions(request_body: ChatCompletionRequest, request: Request):
     """Handle chat completion requests (streaming and non-streaming)."""
+    request_body._app_state = request.app.state
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
@@ -295,7 +301,7 @@ async def _handle_agent_stream(agent, bus, model, req):
     """Stream agent response with EventBus events via SSE."""
     from openjarvis.server.stream_bridge import create_agent_stream
 
-    return await create_agent_stream(agent, bus, model, req)
+    return await create_agent_stream(agent, bus, model, req, getattr(req, "_app_state", None))
 
 
 async def _handle_stream(
@@ -439,6 +445,19 @@ async def _handle_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+
+@router.post("/v1/tool-confirmations/{confirmation_id}")
+async def resolve_tool_confirmation(
+    confirmation_id: str,
+    body: ToolConfirmationDecisionRequest,
+    request: Request,
+):
+    pending = getattr(request.app.state, "_web_tool_confirmations", {})
+    if confirmation_id not in pending:
+        raise HTTPException(status_code=404, detail="Confirmation not found")
+    pending[confirmation_id] = bool(body.approved)
+    return {"ok": True, "approved": bool(body.approved)}
 
 
 @router.get("/v1/models")

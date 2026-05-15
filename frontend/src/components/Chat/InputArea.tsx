@@ -3,12 +3,16 @@ import { Send, Square, Paperclip } from 'lucide-react';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
+import { COMPUTER_USE_TOOLS } from '../../lib/computerTools';
+import { withComputerUsePrompt } from '../../lib/computerUsePrompt';
 import { MicButton } from './MicButton';
+import { ToolConfirmationDialog } from './ToolConfirmationDialog';
 import { useSpeech } from '../../hooks/useSpeech';
-import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
+import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry, ToolConfirmationRequest } from '../../types';
 
 export function InputArea() {
   const [input, setInput] = useState('');
+  const [confirmation, setConfirmation] = useState<ToolConfirmationRequest | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -104,10 +108,12 @@ export function InputArea() {
 
     // Build API messages before adding assistant placeholder
     const currentMessages = useAppStore.getState().messages;
-    const apiMessages = currentMessages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+    const apiMessages = withComputerUsePrompt(
+      currentMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    );
 
     const assistantMsg: ChatMessage = {
       id: generateId(),
@@ -150,7 +156,14 @@ export function InputArea() {
 
     try {
       for await (const sseEvent of streamChat(
-        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+        {
+          model: selectedModel,
+          messages: apiMessages,
+          stream: true,
+          temperature,
+          max_tokens: maxTokens,
+          tools: [...COMPUTER_USE_TOOLS],
+        },
         controller.signal,
       )) {
         const eventName = sseEvent.event;
@@ -200,6 +213,12 @@ export function InputArea() {
             });
             updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
           } catch {}
+        } else if (eventName === 'tool_confirmation_required') {
+          try {
+            const data = JSON.parse(sseEvent.data);
+            setConfirmation(data);
+            setStreamState({ phase: `Waiting for approval: ${data.tool}` });
+          } catch {}
         } else {
           try {
             const data = JSON.parse(sseEvent.data);
@@ -239,6 +258,35 @@ export function InputArea() {
         });
       }
     } finally {
+      if (!accumulatedContent) {
+        // Streaming sometimes finishes with no token deltas on certain local
+        // engine states. Fallback to a non-stream completion to avoid empty UI.
+        try {
+          const fallbackRes = await fetch(`${getBase()}/v1/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: selectedModel,
+              messages: apiMessages,
+              stream: false,
+              temperature,
+              max_tokens: maxTokens,
+              tools: [...COMPUTER_USE_TOOLS],
+            }),
+          });
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            const fallbackText = fallbackData?.choices?.[0]?.message?.content;
+            if (typeof fallbackText === 'string' && fallbackText.trim()) {
+              accumulatedContent = fallbackText;
+              usage = fallbackData?.usage ?? usage;
+              complexity = fallbackData?.complexity ?? complexity;
+            }
+          }
+        } catch {
+          // Keep default empty-response message below.
+        }
+      }
       if (!accumulatedContent) {
         accumulatedContent = 'No response was generated. Please try again.';
       }
@@ -306,6 +354,19 @@ export function InputArea() {
     resetStream,
   ]);
 
+  async function respondToConfirmation(approved: boolean) {
+    if (!confirmation) return;
+    const path = confirmation.agent_id
+      ? `${getBase()}/v1/managed-agents/${confirmation.agent_id}/tool-confirmations/${confirmation.confirmation_id}`
+      : `${getBase()}/v1/tool-confirmations/${confirmation.confirmation_id}`;
+    await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved }),
+    });
+    setConfirmation(null);
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -315,6 +376,13 @@ export function InputArea() {
 
   return (
     <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
+      {confirmation && (
+        <ToolConfirmationDialog
+          request={confirmation}
+          onApprove={() => void respondToConfirmation(true)}
+          onDeny={() => void respondToConfirmation(false)}
+        />
+      )}
       <div
         className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{
