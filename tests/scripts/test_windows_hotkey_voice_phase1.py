@@ -4,10 +4,10 @@ import argparse
 import importlib.util
 import io
 import sys
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-import wave
 
 from openjarvis.speech.tts import TTSResult
 

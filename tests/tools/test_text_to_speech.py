@@ -41,9 +41,18 @@ def test_tts_tool_execute(tmp_path):
     )
 
     with (
-        patch("openjarvis.tools.text_to_speech.load_config", return_value=SimpleNamespace(speech=SimpleNamespace())),
-        patch("openjarvis.tools.text_to_speech.TTSRegistry.contains", return_value=True),
-        patch("openjarvis.tools.text_to_speech.synthesize_with_fallback", return_value=mock_result),
+        patch(
+            "openjarvis.tools.text_to_speech.load_config",
+            return_value=SimpleNamespace(speech=SimpleNamespace()),
+        ),
+        patch(
+            "openjarvis.tools.text_to_speech.TTSRegistry.contains",
+            return_value=True,
+        ),
+        patch(
+            "openjarvis.tools.text_to_speech.synthesize_with_fallback",
+            return_value=mock_result,
+        ),
     ):
         result = tool.execute(
             text="Good morning sir.",
@@ -96,9 +105,18 @@ def test_tts_tool_incremental(tmp_path):
     )
 
     with (
-        patch("openjarvis.tools.text_to_speech.load_config", return_value=SimpleNamespace(speech=SimpleNamespace())),
-        patch("openjarvis.tools.text_to_speech.TTSRegistry.contains", return_value=True),
-        patch("openjarvis.tools.text_to_speech.synthesize_with_fallback", return_value=mock_result),
+        patch(
+            "openjarvis.tools.text_to_speech.load_config",
+            return_value=SimpleNamespace(speech=SimpleNamespace()),
+        ),
+        patch(
+            "openjarvis.tools.text_to_speech.TTSRegistry.contains",
+            return_value=True,
+        ),
+        patch(
+            "openjarvis.tools.text_to_speech.synthesize_with_fallback",
+            return_value=mock_result,
+        ),
     ):
         result = tool.execute(
             text="A. B.",

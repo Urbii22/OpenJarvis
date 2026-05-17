@@ -8,7 +8,12 @@ from typing import Iterator, List, Optional
 import httpx
 
 from openjarvis.core.registry import TTSRegistry
-from openjarvis.speech.tts import TTSBackend, TTSCancelToken, TTSResult, split_text_for_tts
+from openjarvis.speech.tts import (
+    TTSBackend,
+    TTSCancelToken,
+    TTSResult,
+    split_text_for_tts,
+)
 
 _OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
 

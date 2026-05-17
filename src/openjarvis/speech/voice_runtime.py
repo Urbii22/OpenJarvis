@@ -7,12 +7,12 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Literal, Protocol, Sequence
+from typing import Any, Iterator, Literal, Protocol, Sequence
 
 from openjarvis.core.registry import TTSRegistry
 from openjarvis.speech.command_executor import CommandExecutionResult, CommandExecutor
-from openjarvis.speech.command_router import route_command
 from openjarvis.speech.command_normalizer import normalize_command
+from openjarvis.speech.command_router import route_command
 from openjarvis.speech.semantic_router import CommandRouteResult
 from openjarvis.speech.tts import TTSCancelToken, TTSResult
 

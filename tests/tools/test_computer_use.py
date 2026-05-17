@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from openjarvis.tools.computer_use import CreateFolderTool, FindFilesTool, ListDirectoryTool
+from openjarvis.tools.computer_use import (
+    CreateFolderTool,
+    FindFilesTool,
+    ListDirectoryTool,
+)
 from openjarvis.tools.computer_use_policy import (
     classify_computer_action,
     is_blocked_path,
@@ -71,7 +75,10 @@ def test_list_directory_returns_relative_entries(tmp_path: Path):
 
     assert result.success is True
     assert "dir\tnotes" in result.content
-    assert "file\tnotes\\a.txt" in result.content or "file\tnotes/a.txt" in result.content
+    assert (
+        "file\tnotes\\a.txt" in result.content
+        or "file\tnotes/a.txt" in result.content
+    )
 
 
 def test_find_files_supports_fuzzy_name_matching(tmp_path: Path):

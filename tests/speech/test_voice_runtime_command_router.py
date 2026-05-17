@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from openjarvis.core.types import ToolResult
-from openjarvis.speech.realtime_session import RealtimeSessionConfig, RealtimeVoiceSession
+from openjarvis.speech.realtime_session import (
+    RealtimeSessionConfig,
+    RealtimeVoiceSession,
+)
 from openjarvis.speech.semantic_router import CommandRouteResult
 from openjarvis.speech.voice_runtime import VoiceCommandRuntime
 
@@ -47,7 +50,10 @@ def test_runtime_emits_execution_event_for_local_rule():
 
 
 def test_runtime_uses_semantic_fallback_for_unknown_local_route():
-    runtime = VoiceCommandRuntime(semantic_router=_SemanticRouterStub(), execute_tool=_ok_tool)
+    runtime = VoiceCommandRuntime(
+        semantic_router=_SemanticRouterStub(),
+        execute_tool=_ok_tool,
+    )
     events = runtime.process_transcript("abre spotifai")
 
     assert [event.kind for event in events] == ["recognition", "execution"]
@@ -57,7 +63,10 @@ def test_runtime_uses_semantic_fallback_for_unknown_local_route():
 
 
 def test_runtime_emits_confirmation_for_pending_confirmation_route():
-    runtime = VoiceCommandRuntime(semantic_router=_ConfirmationRouterStub(), execute_tool=_ok_tool)
+    runtime = VoiceCommandRuntime(
+        semantic_router=_ConfirmationRouterStub(),
+        execute_tool=_ok_tool,
+    )
     events = runtime.process_transcript("open photos")
 
     assert [event.kind for event in events] == ["recognition", "confirmation"]
@@ -85,7 +94,9 @@ def test_runtime_emits_error_event_when_execution_raises():
 
 
 def test_realtime_session_can_emit_runtime_events_without_breaking_consume():
-    session = RealtimeVoiceSession(RealtimeSessionConfig(wake_word="jarvis", followup_timeout_s=30))
+    session = RealtimeVoiceSession(
+        RealtimeSessionConfig(wake_word="jarvis", followup_timeout_s=30)
+    )
     runtime = VoiceCommandRuntime(execute_tool=_ok_tool)
 
     should_process, cleaned = session.consume("jarvis open vscode")

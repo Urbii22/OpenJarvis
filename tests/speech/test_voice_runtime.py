@@ -19,8 +19,19 @@ class _HealthyBackend(TTSBackend):
     def __init__(self, *, label: str = "healthy") -> None:
         self._label = label
 
-    def synthesize(self, text: str, *, voice_id: str = "", speed: float = 1.0, output_format: str = "mp3") -> TTSResult:
-        return TTSResult(audio=f"{self._label}:{text}".encode(), format=output_format, voice_id=voice_id)
+    def synthesize(
+        self,
+        text: str,
+        *,
+        voice_id: str = "",
+        speed: float = 1.0,
+        output_format: str = "mp3",
+    ) -> TTSResult:
+        return TTSResult(
+            audio=f"{self._label}:{text}".encode(),
+            format=output_format,
+            voice_id=voice_id,
+        )
 
     def available_voices(self):
         return ["voice"]
@@ -32,7 +43,14 @@ class _HealthyBackend(TTSBackend):
 class _BrokenBackend(_HealthyBackend):
     backend_id = "broken"
 
-    def synthesize(self, text: str, *, voice_id: str = "", speed: float = 1.0, output_format: str = "mp3") -> TTSResult:
+    def synthesize(
+        self,
+        text: str,
+        *,
+        voice_id: str = "",
+        speed: float = 1.0,
+        output_format: str = "mp3",
+    ) -> TTSResult:
         raise RuntimeError("boom")
 
 
@@ -77,4 +95,7 @@ def test_benchmark_artifacts_are_written(tmp_path):
 
     assert baseline_payload["phrases"]
     assert report_payload["rankings"]
-    assert report_payload["selected"]["primary"]["quality_score"] >= report_payload["selected"]["backup"]["quality_score"]
+    assert (
+        report_payload["selected"]["primary"]["quality_score"]
+        >= report_payload["selected"]["backup"]["quality_score"]
+    )

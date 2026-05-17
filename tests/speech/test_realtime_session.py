@@ -1,4 +1,7 @@
-from openjarvis.speech.realtime_session import RealtimeSessionConfig, RealtimeVoiceSession
+from openjarvis.speech.realtime_session import (
+    RealtimeSessionConfig,
+    RealtimeVoiceSession,
+)
 
 
 def test_wake_word_activates_followup_window():

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from queue import Empty, Queue
 from threading import Event, Lock, Thread
-import time
 from typing import TextIO
 
 from .terminal_theme import get_terminal_theme

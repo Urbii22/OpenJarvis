@@ -6,7 +6,11 @@ import os
 from typing import Iterable, Iterator, List, Optional
 
 from openjarvis.core.registry import SpeechRegistry
-from openjarvis.speech._stubs import SpeechBackend, TranscriptionChunk, TranscriptionResult
+from openjarvis.speech._stubs import (
+    SpeechBackend,
+    TranscriptionChunk,
+    TranscriptionResult,
+)
 
 try:
     from deepgram import DeepgramClient, PrerecordedOptions

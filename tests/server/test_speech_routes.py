@@ -100,6 +100,7 @@ def test_stream_transcribe_ws(client):
 def test_stream_transcribe_disabled_flag(mock_speech_backend):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from openjarvis.server.api_routes import speech_router
 
     app = FastAPI()

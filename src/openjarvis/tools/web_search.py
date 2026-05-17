@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from urllib.parse import urlparse
 from typing import Any
+from urllib.parse import urlparse
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult

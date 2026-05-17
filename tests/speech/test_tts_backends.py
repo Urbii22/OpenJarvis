@@ -117,6 +117,14 @@ def test_openai_tts_incremental_cancel():
     backend = OpenAITTSBackend(api_key="fake-key")
     token = TTSCancelToken()
     token.cancel()
-    with patch("openjarvis.speech.openai_tts._openai_tts_request", return_value=b"x"):
-        results = list(backend.synthesize_incremental("Hello. World.", cancel_token=token))
+    with patch(
+        "openjarvis.speech.openai_tts._openai_tts_request",
+        return_value=b"x",
+    ):
+        results = list(
+            backend.synthesize_incremental(
+                "Hello. World.",
+                cancel_token=token,
+            )
+        )
     assert results == []

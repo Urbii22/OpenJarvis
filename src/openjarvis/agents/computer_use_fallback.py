@@ -6,7 +6,6 @@ from typing import Iterable
 
 from openjarvis.core.types import ToolCall
 
-
 _OPEN_APP_PATTERNS = (
     r"\babre\s+(.+)$",
     r"\babrir\s+(.+)$",
