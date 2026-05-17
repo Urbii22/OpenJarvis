@@ -39,6 +39,7 @@ import {
   readPersistedShellMode,
   type VoiceMetrics,
   type VoiceShellMode,
+  type VoiceShellState,
   type VoiceStatus,
 } from './state';
 
@@ -86,6 +87,18 @@ export function VoiceShell({ onOpenLegacy }: VoiceShellProps) {
   const [input, setInput] = useState('');
   const [confirmation, setConfirmation] = useState<ToolConfirmationRequest | null>(null);
   const [voiceEventsConnected, setVoiceEventsConnected] = useState(false);
+  const [routerState, setRouterState] = useState<Pick<
+    VoiceShellState,
+    'transcript' | 'normalizedText' | 'intent' | 'confidence' | 'executionStatus' | 'confirmationState' | 'error'
+  >>({
+    transcript: '',
+    normalizedText: '',
+    intent: '',
+    confidence: undefined,
+    executionStatus: '',
+    confirmationState: '',
+    error: '',
+  });
   const messages = useAppStore((s) => s.messages);
   const streamState = useAppStore((s) => s.streamState);
   const serverInfo = useAppStore((s) => s.serverInfo);
@@ -107,6 +120,8 @@ export function VoiceShell({ onOpenLegacy }: VoiceShellProps) {
     available: speechAvailable,
     startRecording,
     stopRecording,
+    startStreamingRecording,
+    stopStreamingRecording,
     interruptSpeech,
   } = useSpeech();
   const abortRef = useRef<AbortController | null>(null);
@@ -140,6 +155,15 @@ export function VoiceShell({ onOpenLegacy }: VoiceShellProps) {
         normalized.transcript || normalized.lastAction || undefined,
         normalized.metrics,
       );
+      setRouterState({
+        transcript: normalized.transcript,
+        normalizedText: normalized.normalizedText,
+        intent: normalized.intent,
+        confidence: normalized.confidence,
+        executionStatus: normalized.executionStatus,
+        confirmationState: normalized.confirmationState,
+        error: normalized.error,
+      });
     }).then((unsubscribe) => {
       if (!active) {
         unsubscribe();
@@ -348,18 +372,27 @@ export function VoiceShell({ onOpenLegacy }: VoiceShellProps) {
   const handleMic = async () => {
     if (speechState === 'recording') {
       applyVoiceUpdate('THINKING', 'Transcribing...');
-      try {
-        const text = await stopRecording();
-        applyVoiceUpdate('ACTIVE', text || 'No speech detected.');
-        if (text) setInput((current) => (current ? `${current} ${text}` : text));
-      } catch {
-        applyVoiceUpdate('ERROR', 'Microphone transcription failed.');
-      }
+      stopStreamingRecording();
       return;
     }
 
     applyVoiceUpdate('LISTENING', 'Listening...');
-    await startRecording();
+    try {
+      await startStreamingRecording({
+        onPartialText: (text) => applyVoiceUpdate('LISTENING', text || 'Listening...'),
+        onFinalText: (text) => {
+          applyVoiceUpdate('ACTIVE', text || 'No speech detected.');
+          if (text) setInput((current) => (current ? `${current} ${text}` : text));
+        },
+        onInterrupted: () => applyVoiceUpdate('INTERRUPTED', 'Speech interrupted.'),
+      });
+    } catch {
+      try {
+        await startRecording();
+      } catch {
+        applyVoiceUpdate('ERROR', 'Microphone transcription failed.');
+      }
+    }
   };
 
   const controller: VoiceController = {
@@ -421,6 +454,7 @@ export function VoiceShell({ onOpenLegacy }: VoiceShellProps) {
           savings={savings}
           voiceEventsConnected={voiceEventsConnected}
           visualLabel={visual.label}
+          routerState={routerState}
           onCollapse={() => setMode('compact')}
           onOpenLegacy={onOpenLegacy}
         />
@@ -431,6 +465,7 @@ export function VoiceShell({ onOpenLegacy }: VoiceShellProps) {
           lastLine={lastLine}
           metrics={metrics}
           visualLabel={visual.label}
+          routerState={routerState}
           onExpand={() => setMode('expanded')}
         />
       )}
@@ -445,6 +480,7 @@ function CompactWorkspace({
   lastLine,
   metrics,
   visualLabel,
+  routerState,
   onExpand,
 }: {
   controller: VoiceController;
@@ -452,6 +488,10 @@ function CompactWorkspace({
   lastLine: string;
   metrics: VoiceMetrics;
   visualLabel: VoiceStatus;
+  routerState: Pick<
+    VoiceShellState,
+    'intent' | 'confidence' | 'executionStatus' | 'confirmationState' | 'error'
+  >;
   onExpand: () => void;
 }) {
   return (
@@ -459,6 +499,9 @@ function CompactWorkspace({
       <VoiceOrb status={status} />
       <div className="voice-shell__status">STATUS: {visualLabel}</div>
       <p className="voice-shell__last-line">{lastLine || 'Ready.'}</p>
+      <p className="voice-shell__last-line">
+        {formatRouterSummary(routerState)}
+      </p>
       <RuntimeStrip metrics={metrics} compact />
       <VoiceShellInput controller={controller} />
       <button type="button" className="voice-shell__expand" onClick={onExpand}>
@@ -478,6 +521,7 @@ function ExpandedWorkspace({
   savings,
   voiceEventsConnected,
   visualLabel,
+  routerState,
   onCollapse,
   onOpenLegacy,
 }: {
@@ -489,6 +533,10 @@ function ExpandedWorkspace({
   savings: { total_calls: number; total_tokens: number; local_cost: number } | null;
   voiceEventsConnected: boolean;
   visualLabel: VoiceStatus;
+  routerState: Pick<
+    VoiceShellState,
+    'transcript' | 'normalizedText' | 'intent' | 'confidence' | 'executionStatus' | 'confirmationState' | 'error'
+  >;
   onCollapse: () => void;
   onOpenLegacy: (path?: string) => void;
 }) {
@@ -537,6 +585,13 @@ function ExpandedWorkspace({
           <RuntimeStrip metrics={metrics} />
           <MiniRow label="Provider" value={metrics.voiceProvider || (voiceEventsConnected ? 'Awaiting runtime' : 'Bridge offline')} />
           <MiniRow label="Profile" value={metrics.voiceProfile || 'Default'} />
+          <MiniRow label="Intent" value={routerState.intent || 'Unknown'} />
+          <MiniRow label="Confidence" value={formatConfidence(routerState.confidence)} />
+          <MiniRow label="Exec status" value={routerState.executionStatus || 'Pending'} />
+          <MiniRow label="Confirm" value={routerState.confirmationState || 'N/A'} />
+          <MiniRow label="Transcript" value={routerState.transcript || 'N/A'} />
+          <MiniRow label="Normalized" value={routerState.normalizedText || 'N/A'} />
+          <MiniRow label="Error" value={routerState.error || 'None'} />
           <MiniRow label="Wake word" value="Optional" />
           <MiniRow label="Interrupt" value="Available while speaking" />
         </PanelSection>
@@ -634,6 +689,29 @@ function RuntimeStrip({ metrics, compact = false }: { metrics: VoiceMetrics; com
       ))}
     </div>
   );
+}
+
+function formatConfidence(value: number | undefined): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '--';
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatRouterSummary(state: {
+  intent: string;
+  confidence?: number;
+  executionStatus: string;
+  confirmationState: string;
+  error: string;
+}): string {
+  if (!state.intent && !state.executionStatus && !state.confirmationState && !state.error) {
+    return 'Router: waiting for recognition';
+  }
+  const intent = state.intent || 'unknown';
+  const confidence = formatConfidence(state.confidence);
+  const exec = state.executionStatus || 'pending';
+  const confirm = state.confirmationState || 'n/a';
+  const err = state.error ? ` | err: ${state.error}` : '';
+  return `Router: ${intent} (${confidence}) | exec: ${exec} | confirm: ${confirm}${err}`;
 }
 
 function PanelSection({ title, icon: Icon, children }: { title: string; icon: typeof Activity; children: ReactNode }) {

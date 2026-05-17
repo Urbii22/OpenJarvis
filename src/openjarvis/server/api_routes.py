@@ -13,6 +13,24 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+
+def _build_voice_command_runtime(config: Any):
+    """Build a voice command runtime with optional semantic fallback."""
+    try:
+        from openjarvis.speech.semantic_router import build_ollama_semantic_router
+        from openjarvis.speech.voice_runtime import VoiceCommandRuntime
+
+        speech_cfg = getattr(config, "speech", None)
+        semantic_router = None
+        if speech_cfg is not None:
+            try:
+                semantic_router = build_ollama_semantic_router(speech_cfg)
+            except Exception:
+                semantic_router = None
+        return VoiceCommandRuntime(semantic_router=semantic_router)
+    except Exception:
+        return None
+
 # ---- Request/Response models ----
 
 
@@ -820,6 +838,7 @@ async def speech_stream(websocket: WebSocket):
     await websocket.accept()
     backend = getattr(websocket.app.state, "speech_backend", None)
     config = getattr(websocket.app.state, "config", None)
+    runtime = _build_voice_command_runtime(config)
     enabled = bool(getattr(getattr(config, "speech", None), "partial_streaming_enabled", False))
     if backend is None:
         await websocket.send_json({"type": "error", "detail": "Speech backend not configured"})
@@ -858,25 +877,34 @@ async def speech_stream(websocket: WebSocket):
             # Strategy: deepgram live first (when available), local chunked fallback second.
             stream_fn = getattr(backend, "transcribe_stream", None)
             if callable(stream_fn):
+                emitted_chunk = False
                 for chunk in stream_fn(chunks, format=fmt, language=language):
-                    await websocket.send_json(
-                        {
-                            "type": "final_text" if chunk.is_final else "partial_text",
-                            "text": chunk.text,
-                            "language": chunk.language,
-                            "confidence": chunk.confidence,
-                        }
-                    )
-            else:
-                result = backend.transcribe(b"".join(chunks), format=fmt, language=language)
-                await websocket.send_json(
-                    {
-                        "type": "final_text",
-                        "text": result.text,
-                        "language": result.language,
-                        "confidence": result.confidence,
+                    emitted_chunk = True
+                    message = {
+                        "type": "final_text" if chunk.is_final else "partial_text",
+                        "text": chunk.text,
+                        "language": chunk.language,
+                        "confidence": chunk.confidence,
                     }
-                )
+                    await websocket.send_json(message)
+                    if chunk.is_final and runtime is not None and chunk.text:
+                        for event in runtime.process_transcript(chunk.text):
+                            await websocket.send_json(event.to_dict())
+                if emitted_chunk:
+                    continue
+
+            if not callable(stream_fn) or not emitted_chunk:
+                result = backend.transcribe(b"".join(chunks), format=fmt, language=language)
+                message = {
+                    "type": "final_text",
+                    "text": result.text,
+                    "language": result.language,
+                    "confidence": result.confidence,
+                }
+                await websocket.send_json(message)
+                if runtime is not None and result.text:
+                    for event in runtime.process_transcript(result.text):
+                        await websocket.send_json(event.to_dict())
     except WebSocketDisconnect:
         return
 

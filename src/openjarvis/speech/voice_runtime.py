@@ -7,9 +7,13 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Iterable, Iterator, Literal, Protocol, Sequence
 
 from openjarvis.core.registry import TTSRegistry
+from openjarvis.speech.command_executor import CommandExecutionResult, CommandExecutor
+from openjarvis.speech.command_router import route_command
+from openjarvis.speech.command_normalizer import normalize_command
+from openjarvis.speech.semantic_router import CommandRouteResult
 from openjarvis.speech.tts import TTSCancelToken, TTSResult
 
 FIXED_PHRASES: tuple[str, ...] = (
@@ -152,6 +156,99 @@ AB_CANDIDATES: tuple[tuple[str, str], ...] = (
     ("companion", "cartesia"),
     ("companion", "openai_tts"),
 )
+
+VoiceRuntimeEventKind = Literal["recognition", "confirmation", "execution", "unknown", "error"]
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceRuntimeEvent:
+    kind: VoiceRuntimeEventKind
+    payload: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "payload": dict(self.payload)}
+
+
+class _SemanticRouter(Protocol):
+    def route(self, command: str) -> CommandRouteResult: ...
+
+
+class VoiceCommandRuntime:
+    """Routes final transcripts into command execution events."""
+
+    def __init__(
+        self,
+        *,
+        semantic_router: _SemanticRouter | None = None,
+        executor: CommandExecutor | None = None,
+        execute_tool: Any | None = None,
+    ) -> None:
+        self._semantic_router = semantic_router
+        self._executor = executor or CommandExecutor(execute_tool=execute_tool)
+
+    def process_transcript(self, transcript: str) -> list[VoiceRuntimeEvent]:
+        raw = (transcript or "").strip()
+        if not raw:
+            return []
+
+        normalized = normalize_command(raw)
+        if not normalized:
+            return [self._event("error", {"error": "empty_command", "transcript": raw})]
+
+        route = route_command(normalized)
+        used_semantic = False
+        if route.intent == "unknown" and self._semantic_router is not None:
+            semantic_route = self._semantic_router.route(normalized)
+            if semantic_route.intent != "unknown":
+                route = semantic_route
+                used_semantic = True
+
+        events = [
+            self._event(
+                "recognition",
+                {
+                    "transcript": raw,
+                    "normalized": normalized,
+                    "route": route.to_dict(),
+                    "semantic_fallback_used": used_semantic,
+                },
+            )
+        ]
+
+        try:
+            execution = self._executor.execute(route)
+        except Exception as exc:
+            events.append(self._event("error", {"error": str(exc), "route": route.to_dict()}))
+            return events
+
+        events.append(self._execution_event(execution))
+        return events
+
+    def _execution_event(self, execution: CommandExecutionResult) -> VoiceRuntimeEvent:
+        payload: dict[str, Any] = {
+            "status": execution.status,
+            "route": execution.route.to_dict(),
+        }
+        if execution.reason:
+            payload["reason"] = execution.reason
+        if execution.tool_name:
+            payload["tool_name"] = execution.tool_name
+        if execution.tool_params is not None:
+            payload["tool_params"] = dict(execution.tool_params)
+        if execution.tool_result is not None:
+            payload["tool_result"] = asdict(execution.tool_result)
+
+        if execution.status == "executed":
+            return self._event("execution", payload)
+        if execution.status in {"pending_confirmation", "blocked", "stub"}:
+            return self._event("confirmation", payload)
+        if execution.status == "unknown":
+            return self._event("unknown", payload)
+        return self._event("error", {**payload, "error": "unexpected_execution_status"})
+
+    @staticmethod
+    def _event(kind: VoiceRuntimeEventKind, payload: dict[str, Any]) -> VoiceRuntimeEvent:
+        return VoiceRuntimeEvent(kind=kind, payload=payload)
 
 
 def _speech_config(config: Any) -> Any:

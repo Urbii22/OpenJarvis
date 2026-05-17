@@ -324,6 +324,7 @@ export function createSpeechStream(handlers: SpeechStreamHandlers): WebSocket {
   ws.onmessage = (evt) => {
     try {
       const data = JSON.parse(evt.data);
+      window.dispatchEvent(new CustomEvent('openjarvis:voice-event', { detail: data }));
       if (data.type === 'partial_text') handlers.onPartialText?.(data.text || '');
       else if (data.type === 'final_text') handlers.onFinalText?.(data.text || '');
       else if (data.type === 'interrupted') handlers.onInterrupted?.();

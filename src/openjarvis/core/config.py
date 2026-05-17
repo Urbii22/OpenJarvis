@@ -1260,6 +1260,13 @@ class SpeechConfig:
     tts_chunk_chars: int = 220
     tts_incremental_enabled: bool = False
     tts_interrupt_cancellation_enabled: bool = False
+    semantic_router_enabled: bool = True
+    semantic_router_model: str = "qwen3:4b"
+    semantic_router_timeout_seconds: float = 2.5
+    semantic_router_min_confidence: float = 0.70
+    semantic_router_execute_confidence: float = 0.90
+    semantic_router_ollama_model: str = "qwen3:4b"
+    semantic_router_ollama_timeout_s: float = 2.5
 
 
 @dataclass(slots=True)

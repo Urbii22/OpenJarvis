@@ -23,11 +23,19 @@ export interface VoiceMetrics {
 export interface VoiceShellState {
   status: VoiceStatus;
   transcript: string;
+  normalizedText: string;
+  intent: string;
+  confidence?: number;
+  executionStatus: string;
+  confirmationState: string;
+  error: string;
   lastAction: string;
   metrics: VoiceMetrics;
 }
 
 export interface VoiceRuntimeEvent {
+  kind?: string;
+  payload?: Record<string, unknown>;
   type?: string;
   event?: string;
   state?: string;
@@ -46,6 +54,8 @@ export interface VoiceRuntimeEvent {
   mic_energy?: number;
   mic_rms?: number;
   mic_peak?: number;
+  route?: Record<string, unknown>;
+  error?: unknown;
 }
 
 function safeText(value: unknown): string {
@@ -109,11 +119,23 @@ export function persistShellMode(
 }
 
 export function normalizeVoiceEvent(event: VoiceRuntimeEvent): VoiceShellState {
-  const eventType = (event.type || event.event || event.state || event.status || '').toLowerCase();
+  const payload = (event.payload && typeof event.payload === 'object'
+    ? event.payload
+    : {}) as Record<string, unknown>;
+  const route =
+    (payload.route && typeof payload.route === 'object' ? payload.route : event.route) || {};
+  const eventType = (event.kind || event.type || event.event || event.state || event.status || '').toLowerCase();
+  const payloadStatus = safeText(payload.status || payload.state).toLowerCase();
   let status: VoiceStatus = 'READY';
 
   if (['hotkey', 'recording', 'listening', 'partial_text', 'wake_word_detected'].includes(eventType)) {
     status = 'LISTENING';
+  } else if (eventType === 'recognition') {
+    status = 'LISTENING';
+  } else if (eventType === 'confirmation') {
+    status = 'THINKING';
+  } else if (eventType === 'execution') {
+    status = payloadStatus.includes('error') || payloadStatus.includes('failed') ? 'ERROR' : 'THINKING';
   } else if (['active'].includes(eventType)) {
     status = 'ACTIVE';
   } else if (['transcribing', 'thinking', 'synthesizing', 'inference_start', 'agent_turn_start'].includes(eventType)) {
@@ -128,8 +150,17 @@ export function normalizeVoiceEvent(event: VoiceRuntimeEvent): VoiceShellState {
 
   return {
     status,
-    transcript: safeText(event.transcript || event.text_final || event.text_partial || event.text || ''),
-    lastAction: safeText(event.detail || event.message || ''),
+    transcript: safeText(payload.transcript || event.transcript || event.text_final || event.text_partial || event.text || ''),
+    normalizedText: safeText(payload.normalized || payload.corrected_text || (route as Record<string, unknown>).corrected_text || ''),
+    intent: safeText((route as Record<string, unknown>).intent || ''),
+    confidence:
+      typeof (route as Record<string, unknown>).confidence === 'number'
+        ? ((route as Record<string, unknown>).confidence as number)
+        : undefined,
+    executionStatus: safeText(payload.status || ''),
+    confirmationState: safeText(payload.confirmation_state || payload.state || (eventType === 'confirmation' ? payload.status : '')),
+    error: safeText(payload.error || (route as Record<string, unknown>).error || event.error || ''),
+    lastAction: safeText(payload.reason || payload.tool_name || event.detail || event.message || payload.status || ''),
     metrics: {
       voiceProvider: event.voice_provider,
       voiceProfile: event.voice_profile,

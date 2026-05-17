@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from openjarvis.speech.wakeword import WakeWordDetector
+
+if TYPE_CHECKING:
+    from openjarvis.speech.voice_runtime import VoiceCommandRuntime, VoiceRuntimeEvent
 
 
 @dataclass(slots=True)
@@ -41,3 +45,8 @@ class RealtimeVoiceSession:
 
         return False, ""
 
+    def consume_runtime(self, text: str, runtime: VoiceCommandRuntime) -> list[VoiceRuntimeEvent]:
+        should_process, cleaned = self.consume(text)
+        if not should_process:
+            return []
+        return runtime.process_transcript(cleaned)
