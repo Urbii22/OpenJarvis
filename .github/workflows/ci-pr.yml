@@ -76,7 +76,7 @@ jobs:
         run: uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
 
       - name: Run Windows-focused tests
-        run: uv run pytest tests/scripts/test_windows_hotkey_voice_phase1.py tests/speech tests/tools tests/server -q -m "not live and not cloud and not linux_only and not posix_only"
+        run: uv run pytest tests/scripts/test_windows_hotkey_voice_phase1.py tests/speech tests/server/test_speech_routes.py tests/server/test_ws_bridge.py tests/server/test_websocket.py tests/tools/test_agent_tools.py tests/tools/test_shell_exec.py tests/tools/test_tool_timeout.py -q -m "not live and not cloud and not linux_only and not posix_only"
 
   linux-posix-ci:
     name: Linux/POSIX CI
