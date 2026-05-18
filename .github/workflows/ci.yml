@@ -63,7 +63,7 @@ jobs:
         run: uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
 
       - name: Run tests
-        run: uv run pytest tests/ -v --tb=short -m "not live and not cloud" --cov=openjarvis --cov-report=term-missing --cov-report=xml --cov-fail-under=60
+        run: uv run pytest tests/ -v --tb=short -m "not live and not cloud and not linux_only and not posix_only" --cov=openjarvis --cov-report=term-missing --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage report
         if: always()

@@ -8,9 +8,18 @@ from openjarvis.cli import _bg_state
 from openjarvis.cli._chat_banner import render_startup_banner
 
 
+def _model_marker(tmp_openjarvis_home: Path, model_id: str, state: str) -> Path:
+    return (
+        tmp_openjarvis_home
+        / ".state"
+        / "models"
+        / _bg_state.model_state_marker_name(model_id, state)
+    )
+
+
 def test_banner_empty_when_all_ready(tmp_openjarvis_home: Path) -> None:
     (tmp_openjarvis_home / ".state" / "extension-built").write_text("")
-    (tmp_openjarvis_home / ".state" / "models" / "qwen3.5:9b.ready").write_text("")
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "ready").write_text("")
     s = _bg_state.get_status()
     banner = render_startup_banner(s)
     assert banner == ""
@@ -26,8 +35,7 @@ def test_banner_shows_rust_building(tmp_openjarvis_home: Path) -> None:
 
 def test_banner_shows_model_downloading(tmp_openjarvis_home: Path) -> None:
     (tmp_openjarvis_home / ".state" / "extension-built").write_text("")
-    models_dir = tmp_openjarvis_home / ".state" / "models"
-    (models_dir / "qwen3.5:9b.downloading").write_text("")
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "downloading").write_text("")
     s = _bg_state.get_status()
     banner = render_startup_banner(s)
     assert "qwen3.5:9b" in banner

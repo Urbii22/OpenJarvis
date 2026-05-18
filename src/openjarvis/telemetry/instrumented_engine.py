@@ -97,6 +97,7 @@ class InstrumentedEngine(InferenceEngine):
         gpu_sample: Optional[GpuSample] = None
         energy_sample: Optional[Any] = None
         t0 = time.time()
+        perf_start = time.perf_counter()
 
         # Prefer EnergyMonitor over legacy GpuMonitor
         if self._energy_monitor is not None:
@@ -126,7 +127,7 @@ class InstrumentedEngine(InferenceEngine):
                 **kwargs,
             )
 
-        latency = time.time() - t0
+        latency = time.perf_counter() - perf_start
 
         usage = result.get("usage", {})
         completion_tokens = usage.get("completion_tokens", 0)
