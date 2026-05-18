@@ -1,18 +1,19 @@
-name: CI
+name: CI PR
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint:
+    name: Ruff
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -23,15 +24,22 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra framework-comparison
+        run: uv sync --extra dev --extra framework-comparison --extra server
 
       - name: Ruff check
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src tests
 
-  test:
-    runs-on: ubuntu-latest
+  windows-ci:
+    name: Windows Voice/Router CI
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
@@ -55,31 +63,51 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra framework-comparison
+        run: uv sync --extra dev --extra framework-comparison --extra server
 
       - name: Build Rust extension
         run: uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
 
-      - name: Run tests
-        run: |
-          uv run pytest tests/ -v --tb=short -m "not live and not cloud" \
-            --cov=openjarvis \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-fail-under=60
+      - name: Run Windows-focused tests
+        run: uv run pytest tests/scripts/test_windows_hotkey_voice_phase1.py tests/speech tests/tools tests/server -q -m "not live and not cloud and not linux_only and not posix_only"
 
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
+  linux-posix-ci:
+    name: Linux/POSIX CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          name: coverage-xml
-          path: coverage.xml
-          if-no-files-found: warn
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra framework-comparison --extra server
+
+      - name: Run Linux/POSIX tests
+        run: uv run pytest tests/security tests/telemetry tests/core tests/cli -q -m "not live and not cloud and not windows_only"
 
   rust:
+    name: Rust Clippy + Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: rust

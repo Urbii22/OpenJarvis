@@ -167,6 +167,10 @@ markers = [
     "nvidia: requires NVIDIA GPU",
     "slow: long-running test",
     "live_external: requires HERMES_AGENT_PATH and OPENCLAW_PATH; spawns real foreign-framework subprocesses",
+    "linux_only: requires Linux to run",
+    "posix_only: requires POSIX semantics to run",
+    "external_node: requires external Node-based runtime/tooling to run",
+    "windows_only: requires Windows to run",
 ]
 
 [tool.ruff]
