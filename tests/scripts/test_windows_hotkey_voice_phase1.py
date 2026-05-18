@@ -17,6 +17,15 @@ def _load_module():
     spec = importlib.util.spec_from_file_location("windows_hotkey_voice", script_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
+    sys.modules.setdefault(
+        "winsound",
+        SimpleNamespace(
+            PlaySound=lambda *args, **kwargs: None,
+            SND_FILENAME=0,
+            SND_ASYNC=0,
+            SND_PURGE=0,
+        ),
+    )
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module

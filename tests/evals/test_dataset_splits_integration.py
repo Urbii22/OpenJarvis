@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
 
 import pytest
+from datasets.exceptions import DatasetNotFoundError
+from huggingface_hub.errors import GatedRepoError
 
 PROVIDERS = [
     ("openjarvis.evals.datasets.pinchbench", "PinchBenchDataset"),
@@ -24,9 +27,25 @@ def test_train_and_test_are_disjoint_per_provider(mod_name, cls_name):
     ds_cls = getattr(mod, cls_name)
 
     train_ds = ds_cls()
-    train_ds.load(split="train", seed=42)
+    try:
+        train_ds.load(split="train", seed=42)
+    except (
+        DatasetNotFoundError,
+        GatedRepoError,
+        ModuleNotFoundError,
+        subprocess.CalledProcessError,
+    ) as exc:
+        pytest.skip(f"dataset unavailable in CI: {exc}")
     test_ds = ds_cls()
-    test_ds.load(split="test", seed=42)
+    try:
+        test_ds.load(split="test", seed=42)
+    except (
+        DatasetNotFoundError,
+        GatedRepoError,
+        ModuleNotFoundError,
+        subprocess.CalledProcessError,
+    ) as exc:
+        pytest.skip(f"dataset unavailable in CI: {exc}")
 
     train_ids = {r.record_id for r in train_ds.iter_records()}
     test_ids = {r.record_id for r in test_ds.iter_records()}

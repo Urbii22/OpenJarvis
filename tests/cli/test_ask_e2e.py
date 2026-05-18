@@ -36,6 +36,10 @@ def _patch_ask(monkeypatch, tmp_path, *, engine_result=None, no_engine=False):
     cfg.telemetry.db_path = str(tmp_path / "telemetry.db")
 
     monkeypatch.setattr(_ask_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(
+        "openjarvis.cli._version_check.check_for_updates",
+        lambda *_a, **_k: None,
+    )
 
     if no_engine:
         monkeypatch.setattr(_ask_mod, "get_engine", lambda *a, **kw: None)
@@ -60,6 +64,7 @@ def _patch_ask(monkeypatch, tmp_path, *, engine_result=None, no_engine=False):
             "discover_models",
             lambda e: {"mock": ["test-model"]},
         )
+    monkeypatch.setattr(_ask_mod.Console, "status", lambda self, *_a, **_k: mock.MagicMock(__enter__=lambda s: s, __exit__=lambda s, exc_type, exc, tb: False))
 
 
 class TestAskCommand:

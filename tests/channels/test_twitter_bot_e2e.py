@@ -479,7 +479,7 @@ class TestEnvVarExpansion:
             ),
             patch("openjarvis.tools.http_request.check_ssrf", return_value=None),
             patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 return_value=mock_resp,
             ) as mock_req,
         ):
@@ -521,7 +521,7 @@ class TestEnvVarExpansion:
             ),
             patch("openjarvis.tools.http_request.check_ssrf", return_value=None),
             patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 return_value=mock_resp,
             ) as mock_req,
         ):
@@ -556,7 +556,7 @@ class TestEnvVarExpansion:
             ),
             patch("openjarvis.tools.http_request.check_ssrf", return_value=None),
             patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 return_value=mock_resp,
             ) as mock_req,
         ):
@@ -785,7 +785,7 @@ class TestGitHubIssueCreation:
             patch("openjarvis._rust_bridge.get_rust_module", return_value=mock_rust),
             patch("openjarvis.tools.http_request.check_ssrf", return_value=None),
             patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 return_value=mock_resp,
             ) as mock_req,
         ):
@@ -840,7 +840,7 @@ class TestGitHubIssueCreation:
             patch("openjarvis._rust_bridge.get_rust_module", return_value=mock_rust),
             patch("openjarvis.tools.http_request.check_ssrf", return_value=None),
             patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 return_value=mock_resp,
             ) as mock_req,
         ):
