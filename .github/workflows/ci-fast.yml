@@ -1,0 +1,73 @@
+name: CI Fast
+
+on:
+  push:
+    branches:
+      - "codex/**"
+      - "feature/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-lint-and-tests:
+    name: Fast Lint + Router/Voice/Core Tests
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra framework-comparison --extra server
+
+      - name: Ruff check
+        run: uv run ruff check src tests
+
+      - name: Fast Python tests
+        run: uv run pytest tests/speech tests/tools tests/server -q -m "not live and not cloud and not slow and not windows_only and not linux_only and not posix_only"
+
+  rust:
+    name: Rust Clippy + Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace

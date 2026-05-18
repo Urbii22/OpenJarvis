@@ -1,0 +1,136 @@
+name: CI PR
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra framework-comparison --extra server
+
+      - name: Ruff check
+        run: uv run ruff check src tests
+
+  windows-ci:
+    name: Windows Voice/Router CI
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra framework-comparison --extra server
+
+      - name: Build Rust extension
+        run: uv run maturin develop --manifest-path rust/crates/openjarvis-python/Cargo.toml
+
+      - name: Run Windows-focused tests
+        run: uv run pytest tests/scripts/test_windows_hotkey_voice_phase1.py tests/speech tests/tools tests/server -q -m "not live and not cloud and not linux_only and not posix_only"
+
+  linux-posix-ci:
+    name: Linux/POSIX CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra framework-comparison --extra server
+
+      - name: Run Linux/POSIX tests
+        run: uv run pytest tests/security tests/telemetry tests/core tests/cli -q -m "not live and not cloud and not windows_only"
+
+  rust:
+    name: Rust Clippy + Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace

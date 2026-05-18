@@ -169,6 +169,7 @@ markers = [
     "posix_only: requires POSIX semantics to run",
     "slow: long-running test",
     "live_external: requires HERMES_AGENT_PATH and OPENCLAW_PATH; spawns real foreign-framework subprocesses",
+    "external_node: requires external Node-based runtime/tooling to run",
     "windows_only: requires Windows to run",
 ]
 
