@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -61,6 +62,17 @@ def build_safe_env(
 
 def kill_process_tree(pid: int) -> None:
     """Kill a process and all its children (best effort)."""
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as exc:
+            logger.debug("Failed to terminate process %d: %s", pid, exc)
+        return
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
     except (OSError, ProcessLookupError) as exc:
@@ -90,19 +102,22 @@ def run_sandboxed(
     """
     env = build_safe_env(passthrough=env_passthrough, extra=env_extra)
     cwd = working_dir if working_dir and os.path.isdir(working_dir) else None
+    popen_kwargs = {
+        "shell": True,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "env": env,
+        "cwd": cwd,
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["preexec_fn"] = os.setsid
 
     result = SandboxResult()
     try:
-        proc = subprocess.Popen(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-            cwd=cwd,
-            preexec_fn=os.setsid,  # New process group
-        )
+        proc = subprocess.Popen(command, **popen_kwargs)
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
             result.stdout = stdout[:max_output_bytes] if stdout else ""

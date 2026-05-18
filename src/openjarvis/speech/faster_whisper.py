@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import tempfile
-from typing import List, Optional
+from pathlib import Path
+from typing import Iterable, Iterator, List, Optional
 
 from openjarvis.core.registry import SpeechRegistry
-from openjarvis.speech._stubs import Segment, SpeechBackend, TranscriptionResult
+from openjarvis.speech._stubs import (
+    Segment,
+    SpeechBackend,
+    TranscriptionChunk,
+    TranscriptionResult,
+)
 
 try:
     from faster_whisper import WhisperModel
@@ -39,11 +45,23 @@ class FasterWhisperBackend(SpeechBackend):
                     "faster-whisper is not installed. "
                     "Install with: uv sync --extra speech"
                 )
-            self._model = WhisperModel(
-                self._model_size,
-                device=self._device,
-                compute_type=self._compute_type,
-            )
+            try:
+                self._model = WhisperModel(
+                    self._model_size,
+                    device=self._device,
+                    compute_type=self._compute_type,
+                )
+            except RuntimeError as exc:
+                # Common on Windows without CUDA runtime DLLs.
+                msg = str(exc).lower()
+                if "cublas" in msg or "cuda" in msg:
+                    self._model = WhisperModel(
+                        self._model_size,
+                        device="cpu",
+                        compute_type="int8",
+                    )
+                else:
+                    raise
         return self._model
 
     def transcribe(
@@ -58,16 +76,38 @@ class FasterWhisperBackend(SpeechBackend):
 
         # Write audio to a temp file (faster-whisper needs a file path)
         suffix = f".{format}" if not format.startswith(".") else format
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
-            tmp.write(audio)
-            tmp.flush()
+        fd, tmp_name = tempfile.mkstemp(suffix=suffix)
+        tmp_path = Path(tmp_name)
+        try:
+            # On Windows, NamedTemporaryFile can fail when another library
+            # reopens the same path. mkstemp + manual cleanup is safer.
+            with open(fd, "wb", closefd=True) as tmp:
+                tmp.write(audio)
 
             kwargs = {}
             if language:
                 kwargs["language"] = language
 
-            segments_iter, info = model.transcribe(tmp.name, **kwargs)
-            segments_list = list(segments_iter)
+            try:
+                segments_iter, info = model.transcribe(str(tmp_path), **kwargs)
+                segments_list = list(segments_iter)
+            except RuntimeError as exc:
+                msg = str(exc).lower()
+                if "cublas" not in msg and "cuda" not in msg:
+                    raise
+                # Retry once on CPU if CUDA runtime is unavailable.
+                self._model = WhisperModel(
+                    self._model_size,
+                    device="cpu",
+                    compute_type="int8",
+                )
+                segments_iter, info = self._model.transcribe(str(tmp_path), **kwargs)
+                segments_list = list(segments_iter)
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         # Build result
         text = "".join(seg.text for seg in segments_list).strip()
@@ -98,3 +138,34 @@ class FasterWhisperBackend(SpeechBackend):
     def supported_formats(self) -> List[str]:
         """Supported audio formats (same as ffmpeg/Whisper)."""
         return ["wav", "mp3", "m4a", "ogg", "flac", "webm"]
+
+    def transcribe_stream(
+        self,
+        audio_chunks: Iterable[bytes],
+        *,
+        format: str = "wav",
+        language: Optional[str] = None,
+    ) -> Iterator[TranscriptionChunk]:
+        """Local chunked fallback: partial updates over cumulative audio."""
+        collected = b""
+        last_text = ""
+        for chunk in audio_chunks:
+            if not chunk:
+                continue
+            collected += chunk
+            result = self.transcribe(collected, format=format, language=language)
+            if result.text and result.text != last_text:
+                last_text = result.text
+                yield TranscriptionChunk(
+                    text=result.text,
+                    is_final=False,
+                    language=result.language,
+                    confidence=result.confidence,
+                )
+        final = self.transcribe(collected, format=format, language=language)
+        yield TranscriptionChunk(
+            text=final.text,
+            is_final=True,
+            language=final.language,
+            confidence=final.confidence,
+        )

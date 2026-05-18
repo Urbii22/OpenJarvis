@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import os
-from typing import List
+from typing import Iterator, List, Optional
 
 import httpx
 
 from openjarvis.core.registry import TTSRegistry
-from openjarvis.speech.tts import TTSBackend, TTSResult
+from openjarvis.speech.tts import (
+    TTSBackend,
+    TTSCancelToken,
+    TTSResult,
+    split_text_for_tts,
+)
 
 _OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
 
@@ -80,3 +85,23 @@ class OpenAITTSBackend(TTSBackend):
 
     def health(self) -> bool:
         return bool(self._api_key)
+
+    def synthesize_incremental(
+        self,
+        text: str,
+        *,
+        voice_id: str = "nova",
+        speed: float = 1.0,
+        output_format: str = "mp3",
+        max_chunk_chars: int = 220,
+        cancel_token: Optional[TTSCancelToken] = None,
+    ) -> Iterator[TTSResult]:
+        for chunk in split_text_for_tts(text, max_chars=max_chunk_chars):
+            if cancel_token is not None and cancel_token.is_cancelled:
+                return
+            yield self.synthesize(
+                chunk,
+                voice_id=voice_id,
+                speed=speed,
+                output_format=output_format,
+            )

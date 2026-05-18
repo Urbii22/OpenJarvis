@@ -12,7 +12,26 @@ const statusConfig = {
   error: { icon: XCircle, color: 'var(--color-error)' },
 };
 
-function previewArgs(raw: string): string {
+function safeText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map((item) => safeText(item)).join('\n').trim();
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = obj.content ?? obj.text ?? obj.message ?? obj.detail ?? obj.thought;
+    if (typeof preferred === 'string') return preferred;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function previewArgs(rawValue: unknown): string {
+  const raw = safeText(rawValue);
   if (!raw) return '';
   try {
     const parsed = JSON.parse(raw);
@@ -36,6 +55,9 @@ export function ToolCallCard({ toolCall }: Props) {
   const config = statusConfig[toolCall.status];
   const StatusIcon = config.icon;
   const preview = previewArgs(toolCall.arguments);
+  const toolName = safeText(toolCall.tool);
+  const argsText = safeText(toolCall.arguments);
+  const resultText = safeText(toolCall.result);
 
   return (
     <div
@@ -65,7 +87,7 @@ export function ToolCallCard({ toolCall }: Props) {
         <span
           style={{ color: 'var(--color-text)', fontWeight: 500, flexShrink: 0 }}
         >
-          {toolCall.tool}
+          {toolName}
         </span>
         {preview && !expanded && (
           <span
@@ -95,7 +117,7 @@ export function ToolCallCard({ toolCall }: Props) {
           className="px-2.5 pb-2 pt-0.5"
           style={{ borderTop: '1px solid var(--color-border-subtle, var(--color-border))' }}
         >
-          {toolCall.arguments && (
+          {argsText && (
             <div className="mt-1.5">
               <div
                 style={{
@@ -120,11 +142,11 @@ export function ToolCallCard({ toolCall }: Props) {
                   wordBreak: 'break-all',
                 }}
               >
-                {formatJson(toolCall.arguments)}
+                {formatJson(argsText)}
               </pre>
             </div>
           )}
-          {toolCall.result && (
+          {resultText && (
             <div className="mt-1.5">
               <div
                 style={{
@@ -149,7 +171,7 @@ export function ToolCallCard({ toolCall }: Props) {
                   wordBreak: 'break-word',
                 }}
               >
-                {toolCall.result}
+                {resultText}
               </pre>
             </div>
           )}

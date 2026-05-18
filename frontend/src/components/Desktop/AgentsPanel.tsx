@@ -80,6 +80,24 @@ function formatRelativeTime(ts?: number | null): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function safeContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map((v) => safeContent(v)).join('\n').trim();
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = obj.content ?? obj.text ?? obj.thought;
+    if (typeof preferred === 'string') return preferred;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 function formatSchedule(type?: string, value?: string): string {
   if (!type || type === 'manual') return 'Manual';
   if (type === 'cron') return value ? `Cron: ${value}` : 'Cron';
@@ -500,6 +518,7 @@ function InteractTab({ apiUrl, agentId }: { apiUrl: string; agentId: string }) {
         )}
         {messages.map((msg) => {
           const isUser = msg.direction === 'user_to_agent';
+          const text = safeContent(msg.content);
           return (
             <div
               key={msg.id}
@@ -515,7 +534,7 @@ function InteractTab({ apiUrl, agentId }: { apiUrl: string; agentId: string }) {
                   color: C.text,
                 }}
               >
-                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.content}</div>
+                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{text}</div>
                 <div style={{ color: C.overlay0, fontSize: 10, marginTop: 4, textAlign: isUser ? 'right' : 'left' }}>
                   {isUser ? `You · ${msg.mode}` : 'Agent'} · {msg.status}
                 </div>

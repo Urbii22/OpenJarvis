@@ -20,9 +20,10 @@ def store():
 
 class TestGetOrCreate:
     def test_creates_new_session(self, store):
-        session = store.get_or_create("user123", "twilio")
+        session = store.get_or_create("user123", "twilio", session_id="sess-1")
         assert session["sender_id"] == "user123"
         assert session["channel_type"] == "twilio"
+        assert session["session_id"] == "sess-1"
         assert session["conversation_history"] == []
         assert session["preferred_notification_channel"] is None
         assert session["pending_response"] is None

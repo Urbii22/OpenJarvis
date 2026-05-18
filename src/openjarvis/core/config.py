@@ -1088,6 +1088,14 @@ class SecurityConfig:
     profile: str = ""
     vault_key_path: str = str(DEFAULT_CONFIG_DIR / ".vault_key")
     capabilities: CapabilitiesConfig = field(default_factory=CapabilitiesConfig)
+    web_risk_policy_enabled: bool = False
+    web_confirmation_flow_enabled: bool = False
+    web_confirmation_required_risk: str = "high"  # low | medium | high
+    web_confirmation_timeout_seconds: int = 30
+    web_allowlist_domains: str = ""
+    web_denylist_domains: str = ""
+    web_block_sensitive_headers: bool = True
+    web_max_redirects: int = 3
 
 
 # ---------------------------------------------------------------------------
@@ -1208,6 +1216,10 @@ class SessionConfig:
     max_age_hours: float = 24.0
     consolidation_threshold: int = 100
     db_path: str = str(DEFAULT_CONFIG_DIR / "sessions.db")
+    voice_identity_enabled: bool = False
+    voice_local_user_id: str = "local-voice-user"
+    voice_local_session_id: str = ""
+    persistent_preferences_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -1235,6 +1247,26 @@ class SpeechConfig:
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "float16"  # "float16", "int8", "float32"
+    continuous_mode_enabled: bool = False
+    wake_word: str = "jarvis"
+    barge_in_enabled: bool = True
+    memory_context_enabled: bool = False
+    partial_streaming_enabled: bool = False
+    stt_streaming_strategy: str = "chunked_fallback"  # "deepgram_live", "chunked_fallback"
+    tts_provider: str = "auto"
+    voice_profile: str = "jarvis_core"
+    tts_fallback_provider: str = "openai_tts"
+    tts_streaming_enabled: bool = False
+    tts_chunk_chars: int = 220
+    tts_incremental_enabled: bool = False
+    tts_interrupt_cancellation_enabled: bool = False
+    semantic_router_enabled: bool = True
+    semantic_router_model: str = "qwen3:4b"
+    semantic_router_timeout_seconds: float = 2.5
+    semantic_router_min_confidence: float = 0.70
+    semantic_router_execute_confidence: float = 0.90
+    semantic_router_ollama_model: str = "qwen3:4b"
+    semantic_router_ollama_timeout_s: float = 2.5
 
 
 @dataclass(slots=True)

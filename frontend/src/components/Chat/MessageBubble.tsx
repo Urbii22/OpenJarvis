@@ -21,6 +21,26 @@ interface Props {
   message: ChatMessage;
 }
 
+function normalizeMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (typeof content === 'number' || typeof content === 'boolean') return String(content);
+  if (content == null) return '';
+  if (Array.isArray(content)) {
+    return content.map((item) => normalizeMessageContent(item)).join('\n').trim();
+  }
+  if (typeof content === 'object') {
+    const record = content as Record<string, unknown>;
+    const preferred = record.content ?? record.text ?? record.thought;
+    if (typeof preferred === 'string') return preferred;
+    try {
+      return JSON.stringify(content, null, 2);
+    } catch {
+      return String(content);
+    }
+  }
+  return String(content);
+}
+
 function getTextContent(node: any): string {
   if (typeof node === 'string' || typeof node === 'number') {
     return String(node);
@@ -99,6 +119,10 @@ function CopyMessageButton({ content }: { content: string }) {
 
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === 'user';
+  const normalizedContent = useMemo(
+    () => normalizeMessageContent(message.content),
+    [message.content],
+  );
 
   if (isUser) {
     return (
@@ -113,13 +137,13 @@ export function MessageBubble({ message }: Props) {
             wordBreak: 'break-word',
           }}
         >
-          {message.content}
+          {normalizedContent}
         </div>
       </div>
     );
   }
 
-  const cleanContent = useMemo(() => stripThinkTags(message.content), [message.content]);
+  const cleanContent = useMemo(() => stripThinkTags(normalizedContent), [normalizedContent]);
 
   return (
     <div className="group mb-6">

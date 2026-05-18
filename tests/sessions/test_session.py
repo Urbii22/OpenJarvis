@@ -127,3 +127,11 @@ class TestSessionStore:
         assert reloaded.messages[0].channel == "telegram"
         assert reloaded.messages[1].channel == "discord"
         store.close()
+
+    def test_preferred_session_id_reused(self, tmp_path):
+        store = self._make_store(tmp_path)
+        s1 = store.get_or_create("voice-user", preferred_session_id="voice-sid-1")
+        s2 = store.get_or_create("voice-user", preferred_session_id="voice-sid-1")
+        assert s1.session_id == "voice-sid-1"
+        assert s2.session_id == "voice-sid-1"
+        store.close()

@@ -190,7 +190,22 @@ def serve(
                     from openjarvis.core.registry import ToolRegistry
                     from openjarvis.tools._stubs import BaseTool
 
-                    _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+                    _DEFAULT_TOOLS = {
+                        "think",
+                        "calculator",
+                        "web_search",
+                        "shell_exec",
+                        "file_read",
+                        "file_write",
+                        "open_application",
+                        "open_path",
+                        "list_directory",
+                        "find_files",
+                        "create_folder",
+                        "copy_path",
+                        "move_path",
+                        "delete_path",
+                    }
                     configured = config.agent.tools
                     if configured:
                         if isinstance(configured, list):
@@ -268,7 +283,22 @@ def serve(
                         from openjarvis.core.registry import ToolRegistry
                         from openjarvis.tools._stubs import BaseTool
 
-                        _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+                        _DEFAULT_TOOLS = {
+                            "think",
+                            "calculator",
+                            "web_search",
+                            "shell_exec",
+                            "file_read",
+                            "file_write",
+                            "open_application",
+                            "open_path",
+                            "list_directory",
+                            "find_files",
+                            "create_folder",
+                            "copy_path",
+                            "move_path",
+                            "delete_path",
+                        }
                         configured = config.agent.tools
                         if configured:
                             if isinstance(configured, list):

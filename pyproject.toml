@@ -164,9 +164,12 @@ markers = [
     "live: requires running inference engine",
     "macos15: requires macOS 15+ (Sequoia) for Apple FM",
     "live_channel: requires real channel credentials (env vars)",
+    "linux_only: requires Linux to run",
     "nvidia: requires NVIDIA GPU",
+    "posix_only: requires POSIX semantics to run",
     "slow: long-running test",
     "live_external: requires HERMES_AGENT_PATH and OPENCLAW_PATH; spawns real foreign-framework subprocesses",
+    "windows_only: requires Windows to run",
 ]
 
 [tool.ruff]
@@ -174,6 +177,7 @@ target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
+ignore = ["E501"]
 select = ["E", "F", "I", "W"]
 
 [tool.ruff.lint.per-file-ignores]

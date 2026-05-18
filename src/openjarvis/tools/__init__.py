@@ -137,6 +137,11 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.computer_use  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.digest_collect  # noqa: F401
 except ImportError:
     pass

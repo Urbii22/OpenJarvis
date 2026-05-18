@@ -5,12 +5,31 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+from base64 import b64decode
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+def _build_voice_command_runtime(config: Any):
+    """Build a voice command runtime with optional semantic fallback."""
+    try:
+        from openjarvis.speech.semantic_router import build_ollama_semantic_router
+        from openjarvis.speech.voice_runtime import VoiceCommandRuntime
+
+        speech_cfg = getattr(config, "speech", None)
+        semantic_router = None
+        if speech_cfg is not None:
+            try:
+                semantic_router = build_ollama_semantic_router(speech_cfg)
+            except Exception:
+                semantic_router = None
+        return VoiceCommandRuntime(semantic_router=semantic_router)
+    except Exception:
+        return None
 
 # ---- Request/Response models ----
 
@@ -365,18 +384,56 @@ async def telemetry_stats(request: Request):
 @telemetry_router.get("/energy")
 async def telemetry_energy(request: Request):
     """Get energy monitoring data."""
+    def _nvidia_snapshot() -> dict[str, float | int | None]:
+        try:
+            import subprocess
+
+            cmd = [
+                "nvidia-smi",
+                "--query-gpu=utilization.gpu,memory.used,memory.free,memory.total,temperature.gpu,power.draw",
+                "--format=csv,noheader,nounits",
+            ]
+            raw = subprocess.check_output(
+                cmd,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=2,
+            ).strip()
+            if not raw:
+                return {}
+            # Use first GPU row when multiple are present.
+            row = raw.splitlines()[0]
+            parts = [p.strip() for p in row.split(",")]
+            if len(parts) < 6:
+                return {}
+            return {
+                "gpu_util_pct": float(parts[0]),
+                "vram_used_mb": int(float(parts[1])),
+                "vram_free_mb": int(float(parts[2])),
+                "vram_total_mb": int(float(parts[3])),
+                "gpu_temp_c": float(parts[4]),
+                "gpu_power_w": float(parts[5]),
+            }
+        except Exception:
+            return {}
+
     try:
         from openjarvis.core.config import DEFAULT_CONFIG_DIR
         from openjarvis.telemetry.aggregator import TelemetryAggregator
 
         db_path = DEFAULT_CONFIG_DIR / "telemetry.db"
+        gpu_live = _nvidia_snapshot()
         if not db_path.exists():
             return {
                 "total_energy_j": 0,
                 "energy_per_token_j": 0,
                 "avg_power_w": 0,
                 "cpu_temp_c": None,
-                "gpu_temp_c": None,
+                "gpu_temp_c": gpu_live.get("gpu_temp_c"),
+                "gpu_util_pct": gpu_live.get("gpu_util_pct"),
+                "vram_used_mb": gpu_live.get("vram_used_mb"),
+                "vram_free_mb": gpu_live.get("vram_free_mb"),
+                "vram_total_mb": gpu_live.get("vram_total_mb"),
             }
 
         session_start = getattr(request.app.state, "session_start", None)
@@ -395,7 +452,11 @@ async def telemetry_energy(request: Request):
                     total_energy / total_latency if total_latency > 0 else 0
                 ),
                 "cpu_temp_c": None,
-                "gpu_temp_c": None,
+                "gpu_temp_c": gpu_live.get("gpu_temp_c"),
+                "gpu_util_pct": gpu_live.get("gpu_util_pct"),
+                "vram_used_mb": gpu_live.get("vram_used_mb"),
+                "vram_free_mb": gpu_live.get("vram_free_mb"),
+                "vram_total_mb": gpu_live.get("vram_total_mb"),
             }
         finally:
             agg.close()
@@ -769,6 +830,83 @@ async def transcribe_speech(request: Request):
         "confidence": result.confidence,
         "duration_seconds": result.duration_seconds,
     }
+
+
+@speech_router.websocket("/stream")
+async def speech_stream(websocket: WebSocket):
+    """Stream partial/final STT updates over websocket."""
+    await websocket.accept()
+    backend = getattr(websocket.app.state, "speech_backend", None)
+    config = getattr(websocket.app.state, "config", None)
+    runtime = _build_voice_command_runtime(config)
+    enabled = bool(getattr(getattr(config, "speech", None), "partial_streaming_enabled", False))
+    if backend is None:
+        await websocket.send_json({"type": "error", "detail": "Speech backend not configured"})
+        await websocket.close()
+        return
+    if not enabled:
+        await websocket.send_json({"type": "error", "detail": "Speech streaming disabled"})
+        await websocket.close()
+        return
+
+    chunks: List[bytes] = []
+    fmt = "wav"
+    language: Optional[str] = None
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            data = json.loads(raw)
+            msg_type = data.get("type")
+            if msg_type == "start":
+                fmt = data.get("format", "wav")
+                language = data.get("language")
+                chunks = []
+                continue
+            if msg_type == "audio":
+                payload = data.get("data", "")
+                if payload:
+                    chunks.append(b64decode(payload))
+                continue
+            if msg_type == "interrupt":
+                await websocket.send_json({"type": "interrupted"})
+                continue
+            if msg_type != "stop":
+                continue
+
+            # Strategy: deepgram live first (when available), local chunked fallback second.
+            stream_fn = getattr(backend, "transcribe_stream", None)
+            if callable(stream_fn):
+                emitted_chunk = False
+                for chunk in stream_fn(chunks, format=fmt, language=language):
+                    emitted_chunk = True
+                    message = {
+                        "type": "final_text" if chunk.is_final else "partial_text",
+                        "text": chunk.text,
+                        "language": chunk.language,
+                        "confidence": chunk.confidence,
+                    }
+                    await websocket.send_json(message)
+                    if chunk.is_final and runtime is not None and chunk.text:
+                        for event in runtime.process_transcript(chunk.text):
+                            await websocket.send_json(event.to_dict())
+                if emitted_chunk:
+                    continue
+
+            if not callable(stream_fn) or not emitted_chunk:
+                result = backend.transcribe(b"".join(chunks), format=fmt, language=language)
+                message = {
+                    "type": "final_text",
+                    "text": result.text,
+                    "language": result.language,
+                    "confidence": result.confidence,
+                }
+                await websocket.send_json(message)
+                if runtime is not None and result.text:
+                    for event in runtime.process_transcript(result.text):
+                        await websocket.send_json(event.to_dict())
+    except WebSocketDisconnect:
+        return
 
 
 @speech_router.get("/health")

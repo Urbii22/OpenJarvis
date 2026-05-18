@@ -192,6 +192,12 @@ class OllamaEngine(InferenceEngine):
                 "num_ctx": kwargs.get("num_ctx", 8192),
             },
         }
+        # Disable extended thinking for streaming too; otherwise some models
+        # (e.g. Qwen3.5) can emit only "thinking" and no visible content.
+        if "think" not in kwargs:
+            payload["think"] = False
+        elif kwargs["think"] is not None:
+            payload["think"] = kwargs["think"]
         try:
             with self._client.stream("POST", "/api/chat", json=payload) as resp:
                 resp.raise_for_status()

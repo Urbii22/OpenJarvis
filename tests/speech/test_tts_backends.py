@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from openjarvis.core.registry import TTSRegistry
-from openjarvis.speech.tts import TTSResult
+from openjarvis.speech.tts import TTSCancelToken, TTSResult, split_text_for_tts
 
 # ---------------------------------------------------------------------------
 # TTSResult tests
@@ -104,3 +104,27 @@ def test_openai_tts_synthesize():
 
     assert result.audio == b"fake-openai-audio"
     assert result.voice_id == "nova"
+
+
+def test_split_text_for_tts_chunks():
+    chunks = split_text_for_tts("Hello world. This is a test.", max_chars=12)
+    assert len(chunks) >= 2
+
+
+def test_openai_tts_incremental_cancel():
+    from openjarvis.speech.openai_tts import OpenAITTSBackend
+
+    backend = OpenAITTSBackend(api_key="fake-key")
+    token = TTSCancelToken()
+    token.cancel()
+    with patch(
+        "openjarvis.speech.openai_tts._openai_tts_request",
+        return_value=b"x",
+    ):
+        results = list(
+            backend.synthesize_incremental(
+                "Hello. World.",
+                cancel_token=token,
+            )
+        )
+    assert results == []

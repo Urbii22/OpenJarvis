@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:tauri": "tsc -b && vite build --outDir dist",
+    "test:voice-shell": "node tests/voice-shell-state.test.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

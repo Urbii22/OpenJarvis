@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
@@ -12,6 +13,7 @@ from openjarvis.security.ssrf import check_ssrf
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 logger = logging.getLogger(__name__)
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
 @ToolRegistry.register("web_search")
@@ -45,7 +47,12 @@ class WebSearchTool(BaseTool):
                 "required": ["query"],
             },
             category="search",
-            metadata={"requires_api_key": "TAVILY_API_KEY", "fallback": "duckduckgo"},
+            risk_level="medium",
+            metadata={
+                "requires_api_key": "TAVILY_API_KEY",
+                "fallback": "duckduckgo",
+                "risk_level": "medium",
+            },
         )
 
     @staticmethod
@@ -84,14 +91,41 @@ class WebSearchTool(BaseTool):
         ssrf_error = check_ssrf(url)
         if ssrf_error:
             raise ValueError(ssrf_error)
-        resp = httpx.get(
-            url.strip(),
-            follow_redirects=True,
+        max_redirects = 20
+        sec = None
+        try:
+            from openjarvis.core.config import load_config
+
+            sec = load_config().security
+        except Exception:
+            sec = None
+
+        if sec is not None and sec.web_risk_policy_enabled:
+            host = (urlparse(url).hostname or "").lower()
+            allowlist = {
+                d.strip().lower()
+                for d in (sec.web_allowlist_domains or "").split(",")
+                if d.strip()
+            }
+            denylist = {
+                d.strip().lower()
+                for d in (sec.web_denylist_domains or "").split(",")
+                if d.strip()
+            }
+            if host in denylist or (allowlist and host not in allowlist):
+                raise ValueError(
+                    f"Blocked by web policy for domain: {host or '<unknown>'}"
+                )
+            max_redirects = max(0, int(sec.web_max_redirects))
+        with httpx.Client(
+            follow_redirects=max_redirects > 0,
+            max_redirects=max_redirects,
             timeout=30.0,
             headers={
                 "User-Agent": "Mozilla/5.0 (compatible; OpenJarvis/1.0; +https://github.com/openjarvis)"
             },
-        )
+        ) as client:
+            resp = client.get(url.strip())
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         if "application/pdf" in content_type:

@@ -7,6 +7,15 @@ from pathlib import Path
 from openjarvis.cli import _bg_state
 
 
+def _model_marker(tmp_openjarvis_home: Path, model_id: str, state: str) -> Path:
+    return (
+        tmp_openjarvis_home
+        / ".state"
+        / "models"
+        / _bg_state.model_state_marker_name(model_id, state)
+    )
+
+
 def test_get_status_empty(tmp_openjarvis_home: Path) -> None:
     """No state files = everything 'pending'."""
     s = _bg_state.get_status()
@@ -28,23 +37,19 @@ def test_get_status_rust_failed(tmp_openjarvis_home: Path) -> None:
 
 
 def test_get_status_model_downloading(tmp_openjarvis_home: Path) -> None:
-    (tmp_openjarvis_home / ".state" / "models" / "qwen3.5:9b.downloading").write_text(
-        ""
-    )
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "downloading").write_text("")
     s = _bg_state.get_status()
     assert s.models == {"qwen3.5:9b": "downloading"}
 
 
 def test_get_status_model_ready(tmp_openjarvis_home: Path) -> None:
-    (tmp_openjarvis_home / ".state" / "models" / "qwen3.5:9b.ready").write_text("")
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "ready").write_text("")
     s = _bg_state.get_status()
     assert s.models == {"qwen3.5:9b": "ready"}
 
 
 def test_get_status_model_failed(tmp_openjarvis_home: Path) -> None:
-    (tmp_openjarvis_home / ".state" / "models" / "qwen3.5:9b.failed").write_text(
-        "net error"
-    )
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "failed").write_text("net error")
     s = _bg_state.get_status()
     assert s.models == {"qwen3.5:9b": "failed"}
 
@@ -52,24 +57,22 @@ def test_get_status_model_failed(tmp_openjarvis_home: Path) -> None:
 def test_get_status_ready_supersedes_downloading(tmp_openjarvis_home: Path) -> None:
     """If both .downloading and .ready exist (race window), .ready wins."""
     models_dir = tmp_openjarvis_home / ".state" / "models"
-    (models_dir / "qwen3.5:9b.downloading").write_text("")
-    (models_dir / "qwen3.5:9b.ready").write_text("")
+    (models_dir / _bg_state.model_state_marker_name("qwen3.5:9b", "downloading")).write_text("")
+    (models_dir / _bg_state.model_state_marker_name("qwen3.5:9b", "ready")).write_text("")
     s = _bg_state.get_status()
     assert s.models["qwen3.5:9b"] == "ready"
 
 
 def test_all_ready_true_when_all_ready(tmp_openjarvis_home: Path) -> None:
     (tmp_openjarvis_home / ".state" / "extension-built").write_text("")
-    (tmp_openjarvis_home / ".state" / "models" / "qwen3.5:9b.ready").write_text("")
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "ready").write_text("")
     s = _bg_state.get_status()
     assert s.all_ready() is True
 
 
 def test_all_ready_false_when_anything_pending(tmp_openjarvis_home: Path) -> None:
     (tmp_openjarvis_home / ".state" / "extension-built").write_text("")
-    (tmp_openjarvis_home / ".state" / "models" / "qwen3.5:9b.downloading").write_text(
-        ""
-    )
+    _model_marker(tmp_openjarvis_home, "qwen3.5:9b", "downloading").write_text("")
     s = _bg_state.get_status()
     assert s.all_ready() is False
 

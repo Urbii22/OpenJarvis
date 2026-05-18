@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
+
+import pytest
 
 from openjarvis.security.subprocess_sandbox import (
     build_safe_env,
     kill_process_tree,
     run_sandboxed,
 )
+
+pytestmark = [
+    pytest.mark.posix_only,
+    pytest.mark.skipif(sys.platform == "win32", reason="requires POSIX process semantics"),
+]
 
 # ---------------------------------------------------------------------------
 # build_safe_env tests

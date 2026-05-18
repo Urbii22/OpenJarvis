@@ -9,20 +9,22 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  info: ErrorInfo | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, info: null };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { hasError: true, error, info: null };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('ErrorBoundary caught:', error, info);
+    this.setState({ info });
   }
 
   render() {
@@ -42,8 +44,21 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
               {this.state.error?.message || 'An unexpected error occurred.'}
             </p>
+            {this.state.info?.componentStack && (
+              <pre
+                className="text-left text-[11px] mb-4 max-h-40 overflow-auto rounded-lg p-3"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text-tertiary)',
+                  border: '1px solid var(--color-border)',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {this.state.info.componentStack}
+              </pre>
+            )}
             <button
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={() => this.setState({ hasError: false, error: null, info: null })}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer"
               style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}
             >

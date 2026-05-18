@@ -38,7 +38,7 @@ class TestAgentManagerRoutes:
 
         app = FastAPI()
         routers = create_agent_manager_router(manager)
-        agents_router, templates_router, global_router, tools_router = routers
+        agents_router, templates_router, global_router, tools_router, *_ = routers
         app.include_router(agents_router)
         app.include_router(templates_router)
         app.include_router(global_router)
@@ -287,7 +287,7 @@ class TestAgentManagerStreaming:
         app.state.bus = None
 
         routers = create_agent_manager_router(manager)
-        agents_router, templates_router, global_router, tools_router = routers
+        agents_router, templates_router, global_router, tools_router, *_ = routers
         app.include_router(agents_router)
         app.include_router(templates_router)
         app.include_router(global_router)
@@ -494,3 +494,34 @@ class TestResolveToolSpecs:
 
         assert _resolve_tool_specs(None) == []
         assert _resolve_tool_specs([]) == []
+
+
+def test_web_confirmation_risk_classification():
+    from openjarvis.server.agent_manager_routes import _classify_web_tool_risk
+
+    assert _classify_web_tool_risk("web_search", '{"query":"hello"}') == "low"
+    assert _classify_web_tool_risk("web_search", '{"query":"https://x.com"}') == "medium"
+    assert _classify_web_tool_risk("http_request", '{"method":"GET"}') == "medium"
+    assert _classify_web_tool_risk("http_request", '{"method":"POST"}') == "high"
+
+
+def test_web_confirmation_flag_gating():
+    from openjarvis.server.agent_manager_routes import _requires_web_confirmation
+
+    class _Sec:
+        web_confirmation_flow_enabled = True
+        web_confirmation_required_risk = "medium"
+
+    class _Cfg:
+        security = _Sec()
+
+    class _State:
+        config = _Cfg()
+
+    needs, risk = _requires_web_confirmation(
+        _State(),
+        "http_request",
+        '{"method":"POST"}',
+    )
+    assert needs is True
+    assert risk == "high"
