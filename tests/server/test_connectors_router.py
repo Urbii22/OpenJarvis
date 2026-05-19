@@ -19,7 +19,7 @@ def app():
 
     _app = FastAPI()
     router = create_connectors_router()
-    _app.include_router(router, prefix="/v1")
+    _app.include_router(router)
     return TestClient(_app)
 
 
@@ -83,7 +83,7 @@ def test_sync_status(app):
 
 
 def test_trigger_sync(app, tmp_path: Path) -> None:
-    """POST /v1/connectors/obsidian/sync triggers an incremental sync."""
+    """POST /v1/connectors/obsidian/sync starts background sync tracking."""
     vault = tmp_path / "vault"
     vault.mkdir()
     (vault / "note.md").write_text("# Test note\n\nContent here.")
@@ -91,4 +91,5 @@ def test_trigger_sync(app, tmp_path: Path) -> None:
     resp = app.post("/v1/connectors/obsidian/sync")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["chunks_indexed"] >= 1
+    assert data["connector_id"] == "obsidian"
+    assert data["status"] in {"started", "already_syncing"}

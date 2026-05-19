@@ -42,6 +42,58 @@ interface ConversationStore {
   activeId: string | null;
 }
 
+function normalizeTextContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value == null) return '';
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeTextContent(item)).join('\n').trim();
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = obj.content ?? obj.text ?? obj.thought;
+    if (typeof preferred === 'string') return preferred;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function sanitizeConversations(store: ConversationStore): ConversationStore {
+  const conversations: Record<string, Conversation> = {};
+  for (const [id, conv] of Object.entries(store.conversations ?? {})) {
+    const messages = (conv.messages ?? []).map((msg) => ({
+      ...msg,
+      content: normalizeTextContent((msg as { content?: unknown }).content),
+    }));
+    conversations[id] = {
+      ...conv,
+      messages,
+    };
+  }
+  return {
+    version: 1,
+    conversations,
+    activeId: store.activeId ?? null,
+  };
+}
+
+function sanitizeMessage(message: ChatMessage): ChatMessage {
+  return {
+    ...message,
+    content: normalizeTextContent((message as { content?: unknown }).content),
+    toolCalls: message.toolCalls?.map((toolCall) => ({
+      ...toolCall,
+      tool: normalizeTextContent((toolCall as { tool?: unknown }).tool),
+      arguments: normalizeTextContent((toolCall as { arguments?: unknown }).arguments),
+      result: normalizeTextContent((toolCall as { result?: unknown }).result),
+    })),
+  };
+}
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -51,7 +103,7 @@ function loadConversations(): ConversationStore {
     const raw = localStorage.getItem(CONVERSATIONS_KEY);
     if (!raw) return { version: 1, conversations: {}, activeId: null };
     const parsed = JSON.parse(raw);
-    if (parsed.version === 1) return parsed;
+    if (parsed.version === 1) return sanitizeConversations(parsed as ConversationStore);
     return { version: 1, conversations: {}, activeId: null };
   } catch {
     return { version: 1, conversations: {}, activeId: null };
@@ -276,7 +328,7 @@ export const useAppStore = create<AppState>((set, get) => {
           createdAt: overlay.createdAt || Date.now(),
           updatedAt: overlay.updatedAt || Date.now(),
           model: overlay.model || 'default',
-          messages: overlay.messages,
+          messages: overlay.messages.map((message: ChatMessage) => sanitizeMessage(message)),
         };
         saveConversations(store);
         set({
@@ -358,12 +410,14 @@ export const useAppStore = create<AppState>((set, get) => {
       const store = loadConversations();
       const conv = store.conversations[conversationId];
       if (!conv) return;
-      conv.messages.push(message);
+      const sanitizedMessage = sanitizeMessage(message);
+      conv.messages.push(sanitizedMessage);
       conv.updatedAt = Date.now();
-      if (message.role === 'user' && conv.title === 'New chat') {
+      if (sanitizedMessage.role === 'user' && conv.title === 'New chat') {
+        const titleText = sanitizedMessage.content;
         conv.title =
-          message.content.slice(0, 50) +
-          (message.content.length > 50 ? '...' : '');
+          titleText.slice(0, 50) +
+          (titleText.length > 50 ? '...' : '');
       }
       saveConversations(store);
       set({
@@ -387,8 +441,8 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!conv) return;
       const lastMsg = conv.messages[conv.messages.length - 1];
       if (lastMsg && lastMsg.role === 'assistant') {
-        lastMsg.content = content;
-        if (toolCalls) lastMsg.toolCalls = toolCalls;
+        lastMsg.content = normalizeTextContent(content);
+        if (toolCalls) lastMsg.toolCalls = sanitizeMessage({ ...lastMsg, toolCalls }).toolCalls;
         if (usage) lastMsg.usage = usage;
         if (telemetry) lastMsg.telemetry = telemetry;
         if (audio) lastMsg.audio = audio;
@@ -399,7 +453,18 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     setStreamState: (partial: Partial<StreamState>) => {
-      set((s) => ({ streamState: { ...s.streamState, ...partial } }));
+      const normalizedPartial: Partial<StreamState> = { ...partial };
+      if ('content' in partial) {
+        normalizedPartial.content = normalizeTextContent(
+          (partial as { content?: unknown }).content,
+        );
+      }
+      if ('phase' in partial) {
+        normalizedPartial.phase = normalizeTextContent(
+          (partial as { phase?: unknown }).phase,
+        );
+      }
+      set((s) => ({ streamState: { ...s.streamState, ...normalizedPartial } }));
     },
 
     resetStream: () => {

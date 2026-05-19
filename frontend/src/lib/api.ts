@@ -89,15 +89,39 @@ export async function fetchModels(): Promise<ModelInfo[]> {
   if (isTauri()) {
     try {
       const result = await tauriInvoke<{ data?: ModelInfo[] }>('fetch_models');
-      return result?.data || [];
+      if (result?.data?.length) return result.data;
     } catch {
       // Fall through to fetch
     }
   }
-  const res = await fetch(`${getBase()}/v1/models`);
-  if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
-  const data = await res.json();
-  return data.data || [];
+  try {
+    const res = await fetch(`${getBase()}/v1/models`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data?.length) return data.data;
+    }
+  } catch {
+    // Fall through to Ollama tags fallback
+  }
+
+  // Fallback: read models directly from local Ollama daemon.
+  // This keeps desktop usable even if the OpenJarvis API server isn't ready yet.
+  try {
+    const res = await fetch('http://127.0.0.1:11434/api/tags', {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`Ollama tags failed: ${res.status}`);
+    const data = await res.json();
+    const models = Array.isArray(data?.models) ? data.models : [];
+    return models.map((model: { name?: string; modified_at?: string }) => ({
+      id: model.name || '',
+      object: 'model',
+      created: model.modified_at ? Math.floor(new Date(model.modified_at).getTime() / 1000) : 0,
+      owned_by: 'ollama',
+    })).filter((m: ModelInfo) => !!m.id);
+  } catch {
+    throw new Error('Failed to fetch models from OpenJarvis API and Ollama');
+  }
 }
 
 export async function fetchRecommendedModel(): Promise<{ model: string; reason: string }> {
@@ -283,6 +307,74 @@ export async function fetchSpeechHealth(): Promise<SpeechHealth> {
   const res = await fetch(`${getBase()}/v1/speech/health`);
   if (!res.ok) return { available: false };
   return res.json();
+}
+
+export interface SpeechStreamHandlers {
+  onPartialText?: (text: string) => void;
+  onFinalText?: (text: string) => void;
+  onInterrupted?: () => void;
+  onVoiceEvent?: (event: Record<string, unknown>) => void;
+  onError?: (detail: string) => void;
+}
+
+export function createSpeechStream(handlers: SpeechStreamHandlers): WebSocket {
+  const base = getBase() || window.location.origin;
+  const wsUrl = base.replace(/^http/, 'ws') + '/v1/speech/stream';
+  const ws = new WebSocket(wsUrl);
+  ws.onmessage = (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      window.dispatchEvent(new CustomEvent('openjarvis:voice-event', { detail: data }));
+      if (data.type === 'partial_text') handlers.onPartialText?.(data.text || '');
+      else if (data.type === 'final_text') handlers.onFinalText?.(data.text || '');
+      else if (data.type === 'interrupted') handlers.onInterrupted?.();
+      else if (data.type === 'error') handlers.onError?.(data.detail || 'Streaming error');
+      handlers.onVoiceEvent?.(data);
+    } catch {
+      handlers.onError?.('Invalid speech stream message');
+    }
+  };
+  ws.onerror = () => handlers.onError?.('Speech stream connection error');
+  return ws;
+}
+
+export interface VoiceShellRuntimeEvent {
+  type?: string;
+  event?: string;
+  state?: string;
+  [key: string]: unknown;
+}
+
+export async function subscribeVoiceShellEvents(
+  onEvent: (event: VoiceShellRuntimeEvent) => void,
+): Promise<() => void> {
+  const unsubs: Array<() => void> = [];
+
+  const browserHandler = (raw: Event) => {
+    const custom = raw as CustomEvent<VoiceShellRuntimeEvent>;
+    if (custom.detail) onEvent(custom.detail);
+  };
+  window.addEventListener('openjarvis:voice-event', browserHandler as EventListener);
+  unsubs.push(() => window.removeEventListener('openjarvis:voice-event', browserHandler as EventListener));
+
+  if (isTauri()) {
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      const eventNames = ['voice-ui-event', 'voice_runtime_event'];
+      for (const eventName of eventNames) {
+        const unlisten = await listen<VoiceShellRuntimeEvent>(eventName, (event) => {
+          if (event.payload) onEvent(event.payload);
+        });
+        unsubs.push(unlisten);
+      }
+    } catch {
+      // Older desktop builds may not expose a voice event bridge yet.
+    }
+  }
+
+  return () => {
+    for (const unsub of unsubs) unsub();
+  };
 }
 
 // ---------------------------------------------------------------------------

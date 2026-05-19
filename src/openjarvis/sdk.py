@@ -579,6 +579,9 @@ class Jarvis:
                     top_k=self._config.memory.context_top_k,
                     min_score=self._config.memory.context_min_score,
                     max_context_tokens=self._config.memory.context_max_tokens,
+                    include_session_identity=self._config.sessions.voice_identity_enabled,
+                    session_identity=self._config.sessions.voice_local_session_id
+                    or self._config.sessions.voice_local_user_id,
                 )
                 return inject_context(query, messages, backend, config=ctx_cfg)
         except Exception as exc:

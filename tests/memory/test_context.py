@@ -90,6 +90,18 @@ def test_build_context_message_role():
     assert "test" in msg.content
 
 
+def test_build_context_message_includes_preference_and_identity():
+    results = [RetrievalResult(content="x", score=1.0, source="s.md")]
+    msg = build_context_message(
+        results,
+        session_identity="voice-local-session",
+        preference_summary="language: es",
+    )
+    assert "User preferences:" in msg.content
+    assert "language: es" in msg.content
+    assert "Session identity: voice-local-session" in msg.content
+
+
 def test_inject_context_adds_system_message():
     results = [
         RetrievalResult(

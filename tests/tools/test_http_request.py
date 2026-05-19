@@ -35,6 +35,7 @@ class TestHttpRequestTool:
         tool = HttpRequestTool()
         assert tool.spec.name == "http_request"
         assert tool.spec.category == "network"
+        assert tool.spec.risk_level == "high"
 
     def test_spec_required_capabilities(self):
         tool = HttpRequestTool()
@@ -185,7 +186,7 @@ class TestHttpRequestTool:
         tool = HttpRequestTool()
         with patch("openjarvis.tools.http_request.check_ssrf", return_value=None):
             with patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 side_effect=httpx.TimeoutException("timed out"),
             ):
                 result = tool.execute(url="https://slow.example.com", timeout=5)
@@ -197,7 +198,7 @@ class TestHttpRequestTool:
         tool = HttpRequestTool()
         with patch("openjarvis.tools.http_request.check_ssrf", return_value=None):
             with patch(
-                "openjarvis.tools.http_request.httpx.request",
+                "openjarvis.tools.http_request.httpx.Client.request",
                 side_effect=httpx.ConnectError("Connection refused"),
             ):
                 result = tool.execute(url="https://down.example.com")
@@ -269,6 +270,47 @@ class TestHttpRequestTool:
             result = tool.execute(url="https://api.example.com/data")
         assert isinstance(result.metadata["headers"], dict)
         assert result.metadata["headers"]["x-request-id"] == "abc123"
+
+    def test_web_policy_blocks_denylisted_domain(self):
+        tool = HttpRequestTool()
+
+        class _Sec:
+            web_risk_policy_enabled = True
+            web_allowlist_domains = ""
+            web_denylist_domains = "blocked.example.com"
+            web_block_sensitive_headers = True
+            web_max_redirects = 3
+
+        class _Cfg:
+            security = _Sec()
+
+        with patch("openjarvis.tools.http_request.check_ssrf", return_value=None):
+            with patch("openjarvis.core.config.load_config", return_value=_Cfg()):
+                result = tool.execute(url="https://blocked.example.com/path")
+        assert result.success is False
+        assert "Blocked by web policy" in result.content
+
+    def test_web_policy_blocks_sensitive_headers_for_untrusted_domain(self):
+        tool = HttpRequestTool()
+
+        class _Sec:
+            web_risk_policy_enabled = True
+            web_allowlist_domains = "trusted.example.com"
+            web_denylist_domains = ""
+            web_block_sensitive_headers = True
+            web_max_redirects = 3
+
+        class _Cfg:
+            security = _Sec()
+
+        with patch("openjarvis.tools.http_request.check_ssrf", return_value=None):
+            with patch("openjarvis.core.config.load_config", return_value=_Cfg()):
+                result = tool.execute(
+                    url="https://untrusted.example.com/path",
+                    headers={"Authorization": "Bearer x"},
+                )
+        assert result.success is False
+        assert "Blocked by web policy" in result.content
 
 
 __all__ = ["TestHttpRequestTool"]

@@ -33,6 +33,14 @@ export interface ToolCallEndEvent {
   latency: number;
 }
 
+export interface ToolConfirmationRequest {
+  confirmation_id: string;
+  agent_id?: string;
+  tool: string;
+  arguments: string;
+  risk_level: 'low' | 'medium' | 'high' | 'blocked' | string;
+}
+
 // --- Chat Types ---
 
 export interface ToolCallInfo {

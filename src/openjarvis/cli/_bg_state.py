@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
+from urllib.parse import quote, unquote
 
 from openjarvis.core import config
 
@@ -40,6 +41,11 @@ def _safe_read(path: Path) -> Optional[str]:
         return None
 
 
+def model_state_marker_name(model_id: str, state: str) -> str:
+    """Return a filesystem-safe marker filename for a model download state."""
+    return f"{quote(model_id, safe='._-')}.{state}"
+
+
 def get_status(home: Optional[Path] = None) -> BgStatus:
     """Snapshot the background-work state from the state directory."""
     home = home or config.DEFAULT_CONFIG_DIR
@@ -64,7 +70,7 @@ def get_status(home: Optional[Path] = None) -> BgStatus:
         for f in models_dir.iterdir():
             if f.suffix not in (".downloading", ".ready", ".failed"):
                 continue
-            model_id = f.name[: -len(f.suffix)]
+            model_id = unquote(f.name[: -len(f.suffix)])
             new_state = f.suffix.lstrip(".")
             current = seen.get(model_id, "")
             # Precedence: ready > failed > downloading

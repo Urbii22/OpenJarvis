@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import Iterable, Iterator, List, Optional
 
 from openjarvis.core.registry import SpeechRegistry
-from openjarvis.speech._stubs import SpeechBackend, TranscriptionResult
+from openjarvis.speech._stubs import (
+    SpeechBackend,
+    TranscriptionChunk,
+    TranscriptionResult,
+)
 
 try:
     from deepgram import DeepgramClient, PrerecordedOptions
@@ -95,3 +99,29 @@ class DeepgramSpeechBackend(SpeechBackend):
 
     def supported_formats(self) -> List[str]:
         return ["wav", "mp3", "ogg", "flac", "webm", "m4a"]
+
+    def transcribe_stream(
+        self,
+        audio_chunks: Iterable[bytes],
+        *,
+        format: str = "wav",
+        language: Optional[str] = None,
+    ) -> Iterator[TranscriptionChunk]:
+        """Chunked fallback stream; emits one partial then final."""
+        combined = b"".join(audio_chunks)
+        if not combined:
+            return
+        result = self.transcribe(combined, format=format, language=language)
+        if result.text:
+            yield TranscriptionChunk(
+                text=result.text,
+                is_final=False,
+                language=result.language,
+                confidence=result.confidence,
+            )
+        yield TranscriptionChunk(
+            text=result.text,
+            is_final=True,
+            language=result.language,
+            confidence=result.confidence,
+        )

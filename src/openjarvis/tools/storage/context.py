@@ -18,6 +18,9 @@ class ContextConfig:
     top_k: int = 5
     min_score: float = 0.0
     max_context_tokens: int = 2048
+    include_session_identity: bool = False
+    session_identity: str = ""
+    preference_summary: str = ""
 
 
 def _count_tokens(text: str) -> int:
@@ -46,6 +49,9 @@ def format_context(results: List[RetrievalResult]) -> str:
 
 def build_context_message(
     results: List[RetrievalResult],
+    *,
+    session_identity: str = "",
+    preference_summary: str = "",
 ) -> Message:
     """Create a system message with formatted context."""
     context_text = format_context(results)
@@ -54,6 +60,10 @@ def build_context_message(
         " base. Use it to inform your response, citing sources"
         " where applicable:\n\n" + context_text
     )
+    if preference_summary:
+        content += f"\n\nUser preferences:\n{preference_summary}"
+    if session_identity:
+        content += f"\n\nSession identity: {session_identity}"
     return Message(role=Role.SYSTEM, content=content)
 
 
@@ -119,7 +129,12 @@ def inject_context(
     )
 
     # Build context message and prepend
-    ctx_msg = build_context_message(truncated)
+    session_identity = cfg.session_identity if cfg.include_session_identity else ""
+    ctx_msg = build_context_message(
+        truncated,
+        session_identity=session_identity,
+        preference_summary=cfg.preference_summary,
+    )
     return [ctx_msg] + list(messages)
 
 

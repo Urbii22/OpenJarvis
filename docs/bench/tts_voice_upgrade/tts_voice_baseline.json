@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-05-14T16:04:40",
+  "phrases": [
+    "Jarvis, status report for this morning.",
+    "Summarize my priorities in under thirty seconds.",
+    "Read this code review without sounding like a narrator.",
+    "Tell me the build passed and point out the remaining risk.",
+    "Good morning. Here is your operations briefing.",
+    "Jarvis, switch to a calmer companion tone.",
+    "Dame un resumen corto del estado del proyecto.",
+    "Necesito una respuesta natural, clara y sin fatigar.",
+    "Explica este error en espanol sencillo.",
+    "Resume las tareas urgentes para hoy.",
+    "Keep the pacing brisk but not robotic.",
+    "Make the handoff sound warm and confident."
+  ],
+  "metrics": {
+    "tts.time_to_first_sound_ms": null,
+    "tts.total_synthesis_ms": null
+  },
+  "notes": {
+    "clarity": "Baseline harness ready for reproducible provider comparisons.",
+    "naturalness": "Naturalness scoring is supplied by A/B candidate notes.",
+    "fatigue": "Fatigue is tracked from candidate profile metadata."
+  },
+  "command": "python scripts/tts_voice_benchmark.py --report-dir <path>"
+}

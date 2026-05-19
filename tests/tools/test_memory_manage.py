@@ -48,3 +48,39 @@ def test_memory_create_if_missing(tmp_path: Path):
     assert result.success
     assert path.exists()
     assert "new fact" in path.read_text()
+
+
+def test_preference_requires_explicit_or_repeat(memory_file: Path):
+    from openjarvis.tools.memory_manage import MemoryManageTool
+
+    tool = MemoryManageTool(memory_path=memory_file)
+    rejected = tool.execute(
+        action="add_preference",
+        key="language",
+        value="es",
+        explicit=False,
+        repeat_count=1,
+    )
+    assert rejected.success is False
+
+    accepted = tool.execute(
+        action="add_preference",
+        key="language",
+        value="es",
+        explicit=True,
+    )
+    assert accepted.success is True
+    read_back = tool.execute(action="get_preference", key="language")
+    assert read_back.success is True
+    assert read_back.content == "es"
+
+
+def test_preference_forget(memory_file: Path):
+    from openjarvis.tools.memory_manage import MemoryManageTool
+
+    tool = MemoryManageTool(memory_path=memory_file)
+    tool.execute(action="add_preference", key="tone", value="concise", explicit=True)
+    removed = tool.execute(action="forget_preference", key="tone")
+    assert removed.success is True
+    missing = tool.execute(action="get_preference", key="tone")
+    assert missing.success is False

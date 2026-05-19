@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import pathlib
 import time
+import uuid
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -221,6 +223,53 @@ def create_app(
     app.state.agent_manager = agent_manager
     app.state.agent_scheduler = agent_scheduler
     app.state.session_start = time.time()
+    app.state._web_tool_confirmations = {}
+    app.state._web_confirmation_dispatch = None
+
+    if agent is not None and hasattr(agent, "_executor"):
+        agent._executor._interactive = True
+
+        def _web_confirm(
+            prompt: str,
+            tool_name: str = "",
+            params: dict | None = None,
+            risk_level: str = "medium",
+        ) -> bool:
+            pending = getattr(app.state, "_web_tool_confirmations", {})
+            app.state._web_tool_confirmations = pending
+            confirmation_id = uuid.uuid4().hex
+            pending[confirmation_id] = None
+            dispatch = getattr(app.state, "_web_confirmation_dispatch", None)
+            if callable(dispatch):
+                dispatch(
+                    {
+                        "confirmation_id": confirmation_id,
+                        "tool": tool_name or "tool",
+                        "arguments": json.dumps(params or {}),
+                        "risk_level": risk_level,
+                    }
+                )
+            timeout_seconds = 30
+            try:
+                timeout_seconds = int(
+                    getattr(
+                        getattr(getattr(app.state, "config", None), "security", None),
+                        "web_confirmation_timeout_seconds",
+                        30,
+                    )
+                )
+            except (TypeError, ValueError):
+                timeout_seconds = 30
+            for _ in range(max(1, timeout_seconds * 10)):
+                approved = pending.get(confirmation_id)
+                if approved is not None:
+                    pending.pop(confirmation_id, None)
+                    return bool(approved)
+                time.sleep(0.1)
+            pending.pop(confirmation_id, None)
+            return False
+
+        agent._executor._confirm_callback = _web_confirm
 
     # Wire up trace store if traces are enabled
     app.state.trace_store = None

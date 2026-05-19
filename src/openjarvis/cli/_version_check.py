@@ -20,6 +20,9 @@ def check_for_updates(command_name: str) -> None:
     """Print a message if a newer version is available. Best-effort, never raises."""
     if command_name not in _CHECK_COMMANDS:
         return
+    # Preserve machine-readable output for commands like `jarvis ask --json`.
+    if "--json" in sys.argv:
+        return
     try:
         _do_check()
     except Exception:

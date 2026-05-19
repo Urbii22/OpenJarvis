@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,6 +19,14 @@ from tests.telemetry.energy_test_helpers import (
 
 _PLAT = "openjarvis.telemetry.energy_rapl.platform.system"
 _BASE = "openjarvis.telemetry.energy_rapl._RAPL_BASE"
+
+pytestmark = [
+    pytest.mark.linux_only,
+    pytest.mark.skipif(
+        not platform.system().lower().startswith("linux"),
+        reason="RAPL sysfs layout is Linux-specific",
+    ),
+]
 
 
 # ---------------------------------------------------------------------------

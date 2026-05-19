@@ -1919,6 +1919,10 @@ function InteractTab({ agentId, agentStatus }: { agentId: string; agentStatus: s
         )}
         {displayMessages.map((msg) => (
           <div key={msg.id} className="space-y-2">
+            {(() => {
+              const text = safeContent(msg.content);
+              return (
+                <>
             {/* Tool calls rendered as their own full-width entries (like Claude Code) */}
             {msg.direction === 'agent_to_user' && msg._toolCallDetails && msg._toolCallDetails.length > 0 && (
               <div className="flex flex-col items-start gap-2 max-w-[75%]">
@@ -1938,22 +1942,25 @@ function InteractTab({ agentId, agentStatus }: { agentId: string; agentStatus: s
                 }}
               >
                 {msg.direction === 'agent_to_user' ? (
-                  <div className="prose prose-sm prose-invert max-w-none"><ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown></div>
+                  <div className="prose prose-sm prose-invert max-w-none"><ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown></div>
                 ) : (
-                  <p>{msg.content}</p>
+                  <p>{text}</p>
                 )}
                 <p className="text-xs mt-1 opacity-70">
                   {msg.status === 'pending' ? 'sending...' : new Date(msg.created_at * 1000).toLocaleTimeString()}
                 </p>
                 {msg.direction === 'agent_to_user' && (
                   <AgentResponseFooter msg={msg} copiedId={copiedId} onCopy={(id) => {
-                    navigator.clipboard.writeText(msg.content);
+                    navigator.clipboard.writeText(text);
                     setCopiedId(id);
                     setTimeout(() => setCopiedId(null), 2000);
                   }} />
                 )}
               </div>
             </div>
+                </>
+              );
+            })()}
           </div>
         ))}
         {/* Progress indicator — shown when waiting but no streamed content or tool calls yet */}
@@ -4080,4 +4087,21 @@ export function AgentsPage() {
       </div>
     </div>
   );
+}
+function safeContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map((v) => safeContent(v)).join('\n').trim();
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = obj.content ?? obj.text ?? obj.thought;
+    if (typeof preferred === 'string') return preferred;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }

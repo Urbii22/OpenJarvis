@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import {
   MessageSquare,
@@ -20,11 +20,13 @@ import {
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
+import { checkHealth } from '../../lib/api';
 
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [isOnline, setIsOnline] = useState(false);
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -41,6 +43,24 @@ export function Sidebar() {
   const nextTheme = settings.theme === 'light' ? 'dark' : settings.theme === 'dark' ? 'system' : 'light';
 
   const messages = useAppStore((s) => s.messages);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const ok = await checkHealth();
+        if (active) setIsOnline(ok);
+      } catch {
+        if (active) setIsOnline(false);
+      }
+    };
+    void refresh();
+    const id = setInterval(() => void refresh(), 5000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
   const handleNewChat = () => {
     // Don't create a new chat if the current one is empty
     if (messages.length === 0) {
@@ -145,6 +165,20 @@ export function Sidebar() {
             <div className="flex-1 min-w-0">
               <span className="truncate block text-left" style={{ color: 'var(--color-text)' }}>
                 {selectedModel || serverInfo?.model || 'Select model'}
+              </span>
+              <span
+                className="text-[10px] inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded"
+                style={{
+                  background: isOnline ? 'color-mix(in srgb, var(--color-success) 22%, transparent)' : 'color-mix(in srgb, var(--color-error) 22%, transparent)',
+                  color: isOnline ? 'var(--color-success)' : 'var(--color-error)',
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block w-1.5 h-1.5 rounded-full"
+                  style={{ background: isOnline ? 'var(--color-success)' : 'var(--color-error)' }}
+                />
+                {isOnline ? 'ONLINE' : 'OFFLINE'}
               </span>
               {modelLoading && (
                 <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>

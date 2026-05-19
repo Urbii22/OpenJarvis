@@ -35,7 +35,7 @@ _DEFAULT_NOTES_DB = (
 
 _DEFAULT_IMESSAGE_DB = Path.home() / "Library" / "Messages" / "chat.db"
 
-_OLLAMA_MODEL = "qwen3.5:4b"
+_OLLAMA_MODEL = "qwen3.5:9b"
 
 # ---------------------------------------------------------------------------
 # Detection

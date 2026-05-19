@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Iterable, Iterator, List, Optional
 
 
 @dataclass
@@ -26,6 +26,17 @@ class TranscriptionResult:
     confidence: Optional[float] = None
     duration_seconds: float = 0.0
     segments: List[Segment] = field(default_factory=list)
+
+
+@dataclass
+class TranscriptionChunk:
+    """Incremental transcription update for streaming paths."""
+
+    text: str
+    is_final: bool = False
+    interrupted: bool = False
+    language: Optional[str] = None
+    confidence: Optional[float] = None
 
 
 class SpeechBackend(ABC):
@@ -51,5 +62,27 @@ class SpeechBackend(ABC):
     def supported_formats(self) -> List[str]:
         """Return list of supported audio formats."""
 
+    def transcribe_stream(
+        self,
+        audio_chunks: Iterable[bytes],
+        *,
+        format: str = "wav",
+        language: Optional[str] = None,
+    ) -> Iterator[TranscriptionChunk]:
+        """Default streaming fallback: buffer all chunks and emit one final."""
+        audio = b"".join(audio_chunks)
+        result = self.transcribe(audio, format=format, language=language)
+        yield TranscriptionChunk(
+            text=result.text,
+            is_final=True,
+            language=result.language,
+            confidence=result.confidence,
+        )
 
-__all__ = ["Segment", "SpeechBackend", "TranscriptionResult"]
+
+__all__ = [
+    "Segment",
+    "SpeechBackend",
+    "TranscriptionResult",
+    "TranscriptionChunk",
+]

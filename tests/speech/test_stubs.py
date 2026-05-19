@@ -30,3 +30,23 @@ def test_speech_backend_is_abstract():
 
     with pytest.raises(TypeError):
         SpeechBackend()
+
+
+def test_transcribe_stream_default_fallback():
+    class _DummySpeech(SpeechBackend):
+        backend_id = "dummy"
+
+        def transcribe(self, audio: bytes, *, format: str = "wav", language=None):
+            return TranscriptionResult(text="ok", language="en", confidence=0.9)
+
+        def health(self) -> bool:
+            return True
+
+        def supported_formats(self):
+            return ["wav"]
+
+    backend = _DummySpeech()
+    chunks = list(backend.transcribe_stream([b"a", b"b"], format="wav"))
+    assert len(chunks) == 1
+    assert chunks[0].is_final is True
+    assert chunks[0].text == "ok"

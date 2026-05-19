@@ -14,6 +14,7 @@ class TestWebSearchTool:
         tool = WebSearchTool(api_key="test-key")
         assert tool.spec.name == "web_search"
         assert tool.spec.category == "search"
+        assert tool.spec.risk_level == "medium"
 
     def test_spec_requires_api_key_metadata(self):
         tool = WebSearchTool(api_key="test-key")
@@ -42,7 +43,12 @@ class TestWebSearchTool:
         with patch.dict("os.environ", {}, clear=True):
             tool._api_key = None
             monkeypatch.delitem(sys.modules, "tavily", raising=False)
-            result = tool.execute(query="test query")
+            with patch.object(
+                WebSearchTool,
+                "_duckduckgo_search",
+                return_value="**Mock Result**\nhttps://example.com\nBody",
+            ):
+                result = tool.execute(query="test query")
         assert result.success is True
         assert result.metadata["engine"] == "duckduckgo"
 
@@ -307,7 +313,7 @@ class TestUrlFetching:
         mock_resp.text = "<html><body><p>Hello world</p></body></html>"
         mock_resp.headers = {"content-type": "text/html"}
         mock_resp.raise_for_status = MagicMock()
-        monkeypatch.setattr(httpx, "get", MagicMock(return_value=mock_resp))
+        monkeypatch.setattr(httpx.Client, "get", MagicMock(return_value=mock_resp))
 
         content = WebSearchTool._fetch_url("https://example.com")
         assert "Hello world" in content
@@ -320,7 +326,7 @@ class TestUrlFetching:
         mock_resp.text = "<html><script>var x=1;</script><body>Content</body></html>"
         mock_resp.headers = {"content-type": "text/html"}
         mock_resp.raise_for_status = MagicMock()
-        monkeypatch.setattr(httpx, "get", MagicMock(return_value=mock_resp))
+        monkeypatch.setattr(httpx.Client, "get", MagicMock(return_value=mock_resp))
 
         content = WebSearchTool._fetch_url("https://example.com")
         assert "var x" not in content
@@ -334,7 +340,7 @@ class TestUrlFetching:
         mock_resp.text = "<p>" + "x" * 10000 + "</p>"
         mock_resp.headers = {"content-type": "text/html"}
         mock_resp.raise_for_status = MagicMock()
-        monkeypatch.setattr(httpx, "get", MagicMock(return_value=mock_resp))
+        monkeypatch.setattr(httpx.Client, "get", MagicMock(return_value=mock_resp))
 
         content = WebSearchTool._fetch_url("https://example.com", max_chars=100)
         assert len(content) < 200
@@ -348,11 +354,30 @@ class TestUrlFetching:
         mock_resp.text = "%PDF-1.4 binary data"
         mock_resp.headers = {"content-type": "application/pdf"}
         mock_resp.raise_for_status = MagicMock()
-        monkeypatch.setattr(httpx, "get", MagicMock(return_value=mock_resp))
+        monkeypatch.setattr(httpx.Client, "get", MagicMock(return_value=mock_resp))
 
         content = WebSearchTool._fetch_url("https://example.com/file.pdf")
         assert "PDF" in content
         assert "cannot be read" in content
+
+    def test_fetch_url_blocked_by_web_policy(self, monkeypatch):
+        self._mock_ssrf(monkeypatch)
+
+        class _Sec:
+            web_risk_policy_enabled = True
+            web_allowlist_domains = "allowed.example.com"
+            web_denylist_domains = ""
+            web_max_redirects = 3
+
+        class _Cfg:
+            security = _Sec()
+
+        with patch("openjarvis.core.config.load_config", return_value=_Cfg()):
+            try:
+                WebSearchTool._fetch_url("https://blocked.example.com/page")
+                assert False, "Expected ValueError"
+            except ValueError as exc:
+                assert "Blocked by web policy" in str(exc)
 
 
 class TestExecuteWithUrl:
@@ -371,7 +396,7 @@ class TestExecuteWithUrl:
         mock_resp.text = "<html><body>Page content here</body></html>"
         mock_resp.headers = {"content-type": "text/html"}
         mock_resp.raise_for_status = MagicMock()
-        monkeypatch.setattr(httpx, "get", MagicMock(return_value=mock_resp))
+        monkeypatch.setattr(httpx.Client, "get", MagicMock(return_value=mock_resp))
 
         tool = WebSearchTool(api_key="test-key")
         result = tool.execute(query="https://example.com/article")
@@ -388,7 +413,7 @@ class TestExecuteWithUrl:
         mock_resp.text = "<html><body>Article text</body></html>"
         mock_resp.headers = {"content-type": "text/html"}
         mock_resp.raise_for_status = MagicMock()
-        monkeypatch.setattr(httpx, "get", MagicMock(return_value=mock_resp))
+        monkeypatch.setattr(httpx.Client, "get", MagicMock(return_value=mock_resp))
 
         tool = WebSearchTool(api_key="test-key")
         result = tool.execute(query="Summarize https://example.com/article please")
@@ -416,7 +441,7 @@ class TestExecuteWithUrl:
 
         self._mock_ssrf(monkeypatch)
         monkeypatch.setattr(
-            httpx,
+            httpx.Client,
             "get",
             MagicMock(side_effect=httpx.HTTPError("Connection failed")),
         )

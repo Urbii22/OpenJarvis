@@ -135,6 +135,7 @@ class TestInitDownloadPrompt:
         with (
             mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
             mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
+            mock.patch("openjarvis.cli.init_cmd.recommend_model", return_value="qwen3.5:2b"),
             mock.patch("openjarvis.cli.init_cmd.PrivacyScanner"),
         ):
             result = CliRunner().invoke(
@@ -195,6 +196,7 @@ class TestInitDownloadDispatch:
         with (
             mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
             mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
+            mock.patch("openjarvis.cli.init_cmd.recommend_model", return_value="qwen3.5:2b"),
             mock.patch(
                 "openjarvis.cli.init_cmd.ollama_pull",
                 return_value=True,
@@ -213,6 +215,7 @@ class TestInitDownloadDispatch:
         with (
             mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
             mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
+            mock.patch("openjarvis.cli.init_cmd.recommend_model", return_value="qwen3.5:2b"),
             mock.patch("openjarvis.cli.init_cmd.PrivacyScanner"),
         ):
             result = CliRunner().invoke(cli, ["init", "--engine", "vllm"], input="y\n")

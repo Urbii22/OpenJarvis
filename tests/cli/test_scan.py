@@ -319,7 +319,7 @@ class TestRunQuick:
 
     def test_run_quick_returns_subset(self) -> None:
         scanner = PrivacyScanner()
-        plat = sys.platform
+        plat = "darwin" if sys.platform == "darwin" else "linux"
         with (
             patch.object(scanner, "check_filevault") as fv,
             patch.object(scanner, "check_luks") as luks,

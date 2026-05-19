@@ -15,3 +15,7 @@ for _mod in ("cartesia_tts", "kokoro_tts", "openai_tts"):
         importlib.import_module(f".{_mod}", __name__)
     except ImportError:
         pass
+
+# Realtime voice helpers (no external deps).
+for _mod in ("wakeword", "realtime_session"):
+    importlib.import_module(f".{_mod}", __name__)

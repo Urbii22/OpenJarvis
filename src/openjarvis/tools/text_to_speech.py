@@ -6,8 +6,10 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from openjarvis.core.config import load_config
 from openjarvis.core.registry import ToolRegistry, TTSRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.speech.voice_runtime import synthesize_with_fallback
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 
@@ -45,6 +47,14 @@ class TextToSpeechTool(BaseTool):
                         "type": "string",
                         "description": "Directory to save the audio file.",
                     },
+                    "incremental": {
+                        "type": "boolean",
+                        "description": "Enable incremental chunked synthesis.",
+                    },
+                    "max_chunk_chars": {
+                        "type": "integer",
+                        "description": "Character window per chunk for incremental TTS.",
+                    },
                 },
                 "required": ["text"],
             },
@@ -58,9 +68,11 @@ class TextToSpeechTool(BaseTool):
 
         text = params.get("text", "")
         voice_id = params.get("voice_id", "")
-        backend_key = params.get("backend", "cartesia")
+        backend_key = params.get("backend", "")
         output_dir = params.get("output_dir", "")
         speed = float(params.get("speed", 1.0))
+        incremental = bool(params.get("incremental", False))
+        max_chunk_chars = int(params.get("max_chunk_chars", 220))
 
         if not text:
             return ToolResult(
@@ -69,17 +81,12 @@ class TextToSpeechTool(BaseTool):
                 success=False,
             )
 
-        if not TTSRegistry.contains(backend_key):
+        if backend_key and not TTSRegistry.contains(backend_key):
             return ToolResult(
                 tool_name="text_to_speech",
                 content=f"TTS backend '{backend_key}' not available.",
                 success=False,
             )
-
-        backend_cls = TTSRegistry.get(backend_key)
-        backend = backend_cls()
-
-        result = backend.synthesize(text, voice_id=voice_id, speed=speed)
 
         # Save to file
         if output_dir:
@@ -88,19 +95,48 @@ class TextToSpeechTool(BaseTool):
             out_dir = Path(tempfile.mkdtemp(prefix="jarvis-tts-"))
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        ext = result.format or "mp3"
-        audio_path = out_dir / f"digest.{ext}"
-        result.save(audio_path)
+        execution = synthesize_with_fallback(
+            text,
+            config=load_config(),
+            provider=backend_key or None,
+            voice_profile=params.get("voice_profile"),
+            voice_id=voice_id or None,
+            speed=speed,
+            incremental=incremental,
+            max_chunk_chars=max_chunk_chars,
+        )
+        results = execution.results
+
+        if not results:
+            return ToolResult(
+                tool_name="text_to_speech",
+                content="Synthesis canceled before output.",
+                success=False,
+            )
+
+        ext = results[0].format or "mp3"
+        audio_paths = []
+        for idx, result in enumerate(results, start=1):
+            suffix = "" if len(results) == 1 else f".part{idx}"
+            audio_path = out_dir / f"digest{suffix}.{ext}"
+            result.save(audio_path)
+            audio_paths.append(str(audio_path))
 
         return ToolResult(
             tool_name="text_to_speech",
-            content=str(audio_path),
+            content=audio_paths[0],
             success=True,
             metadata={
-                "audio_path": str(audio_path),
+                "audio_path": audio_paths[0],
+                "audio_paths": audio_paths,
                 "format": ext,
-                "duration_seconds": result.duration_seconds,
-                "voice_id": result.voice_id,
-                "backend": backend_key,
+                "duration_seconds": sum(r.duration_seconds for r in results),
+                "voice_id": execution.selection.voice_id,
+                "backend": execution.selection.provider,
+                "incremental": incremental,
+                "voice_profile": execution.selection.voice_profile,
+                "fallback_used": execution.metrics.get("fallback_used", False),
+                "ttfs_ms": execution.metrics.get("ttfs_ms"),
+                "total_synthesis_ms": execution.metrics.get("total_synthesis_ms"),
             },
         )

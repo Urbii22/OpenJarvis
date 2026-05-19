@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Routes, Route } from 'react-router';
 import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
@@ -14,9 +14,11 @@ import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
+import { VoiceShell, isVoiceShellEnabledFromRuntime } from './components/voice-shell';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
+  const [legacyUiForced, setLegacyUiForced] = useState(false);
   const handleSetupReady = useCallback(() => setSetupDone(true), []);
   const setModels = useAppStore((s) => s.setModels);
   const setModelsLoading = useAppStore((s) => s.setModelsLoading);
@@ -167,19 +169,30 @@ export default function App() {
     return <SetupScreen onReady={handleSetupReady} />;
   }
 
+  const voiceShellEnabled = isVoiceShellEnabledFromRuntime() && !legacyUiForced;
+  const openLegacyUi = (path: string = '/') => {
+    setLegacyUiForced(true);
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   return (
     <>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<ChatPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="get-started" element={<GetStartedPage />} />
-          <Route path="data-sources" element={<DataSourcesPage />} />
-          <Route path="agents" element={<AgentsPage />} />
-          <Route path="logs" element={<LogsPage />} />
-        </Route>
-      </Routes>
+      {voiceShellEnabled ? (
+        <VoiceShell onOpenLegacy={openLegacyUi} />
+      ) : (
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<ChatPage />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="get-started" element={<GetStartedPage />} />
+            <Route path="data-sources" element={<DataSourcesPage />} />
+            <Route path="agents" element={<AgentsPage />} />
+            <Route path="logs" element={<LogsPage />} />
+          </Route>
+        </Routes>
+      )}
       <Toaster position="bottom-right" />
       {commandPaletteOpen && <CommandPalette />}
       {optInModalOpen && (
