@@ -3,8 +3,10 @@
 Invoked as:
     python hermes_runner.py \\
         --task <prompt> --model <m> --base-url <url> --api-key <k> \\
-        --api-mode <mode> --output-json <path> [--workspace <path>] \\
-        [--max-iterations 90] [--system-prompt <s>]
+        --api-mode <mode> --output-json <path>
+
+Optional arguments include ``--workspace <path>``, ``--max-iterations 90``,
+and ``--system-prompt <s>``.
 
 Imports `AIAgent` from `run_agent` (the top-level module Hermes ships
 at the path indicated by `HERMES_AGENT_PATH`, set by the calling

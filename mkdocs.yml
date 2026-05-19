@@ -175,6 +175,7 @@ nav:
       - Code Assistant: user-guide/code-assistant.md
       - Scheduled Monitor: user-guide/scheduled-monitor.md
       - Simple Chat: user-guide/chat-simple.md
+      - Desktop App: user-guide/openjarvis-desktop-guide.md
       - Agents: user-guide/agents.md
       - Channels & Connectors: user-guide/channels-and-connectors.md
       - Tools: user-guide/tools.md
